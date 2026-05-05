@@ -82,3 +82,22 @@ Stage Summary:
 - Both realtime mechanisms active: Supabase Realtime (primary) + socket.io (fallback)
 - monitor-ws service running on port 3004
 - Clean lint, healthy server
+
+---
+Task ID: 4
+Agent: Main
+Task: Fix product creation — "tidak bisa membuat produk baru"
+
+Work Log:
+- Investigated ProductsModule.tsx — found role-gating mismatch
+- Bug: "Produk Baru" button only rendered for `super_admin`, but API allows `keuangan` and `gudang` too
+- Fix 1 (line 976): Changed `user?.role === 'super_admin'` → `['super_admin', 'keuangan', 'gudang'].includes(user?.role || '')` for Add Product button
+- Fix 2 (line 1034): Same change for Track Stock toggle
+- Fix 3 (line 1077): Same change for Edit/Delete dropdown — Edit visible to all 3 roles
+- Fix 4: Delete menu item wrapped with `user?.role === 'super_admin'` guard (matches API restriction)
+- Lint clean, dev server compiles successfully
+
+Stage Summary:
+- Product CRUD now accessible to `super_admin`, `keuangan`, and `gudang` roles (matching API permissions)
+- Delete restricted to `super_admin` only (matching backend)
+- File modified: src/components/erp/ProductsModule.tsx

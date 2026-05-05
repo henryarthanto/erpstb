@@ -973,7 +973,7 @@ export default function ProductsModule() {
               {products.length} produk
             </span>
             
-            {user?.role === 'super_admin' && (
+            {['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') && (
               <Dialog open={showCreate} onOpenChange={setShowCreate}>
                 <DialogTrigger asChild>
                   <Button className="w-auto shrink-0">
@@ -1031,7 +1031,7 @@ export default function ProductsModule() {
                       )}
                       <span className="text-[11px] text-muted-foreground whitespace-nowrap">Lacak Stok</span>
                     </div>
-                    {user?.role === 'super_admin' && (
+                    {['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') && (
                       <Switch
                         checked={isTracking}
                         onCheckedChange={(checked) => {
@@ -1074,7 +1074,7 @@ export default function ProductsModule() {
                             <Package className="w-3 h-3" />
                           </Button>
                         )}
-                        {user?.role === 'super_admin' && (
+                        {['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]">
@@ -1092,7 +1092,10 @@ export default function ProductsModule() {
                                   Kelola Stok
                                 </DropdownMenuItem>
                               )}
+                              {user?.role === 'super_admin' && (
                               <DropdownMenuSeparator />
+                              )}
+                              {user?.role === 'super_admin' && (
                               <DropdownMenuItem 
                                 className="text-red-600"
                                 disabled={deleteMutation.isPending}
@@ -1105,6 +1108,7 @@ export default function ProductsModule() {
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 {deleteMutation.isPending ? 'Menghapus...' : 'Hapus'}
                               </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
