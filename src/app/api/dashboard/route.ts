@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
       // Daily sales & profit for the selected period, used by the area chart.
       withTimeout(safeQuery(
         prisma.$queryRaw`
-          SELECT DATE_FORMAT(transaction_date, '%Y-%m-%d') AS date,
+          SELECT TO_CHAR(transaction_date, 'YYYY-MM-DD') AS date,
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
                  THEN total ELSE 0 END), 0) AS sales,
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
           FROM transactions
           WHERE transaction_date >= ${filterStart} AND transaction_date <= ${filterEnd}
             ${unitFilter}
-          GROUP BY DATE(transaction_date)
+          GROUP BY transaction_date::date
           ORDER BY 1
         `,
         [],

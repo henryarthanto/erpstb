@@ -3,7 +3,7 @@
 // GET /api/health
 //
 // Returns system health report: database connectivity, memory, cache.
-// MariaDB/Prisma mode — no Supabase or PgBouncer checks.
+// PostgreSQL/Prisma mode (Supabase).
 // =====================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     status,
-    mode: 'mariadb',
+    mode: 'postgresql',
     timestamp,
     uptime,
     database: {

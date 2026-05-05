@@ -11,36 +11,6 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0 || days > 0) parts.push(`${hours}h`);
-  parts.push(`${minutes}m`);
-  return parts.join(' ');
-}
-
-async function getMariaDbStatus(): Promise<Record<string, string>> {
-  const rows: any[] = await prisma.$queryRawUnsafe('SHOW GLOBAL STATUS');
-  const map: Record<string, string> = {};
-  for (const row of rows) {
-    map[row.Variable_name] = row.Value;
-  }
-  return map;
-}
-
-async function getMariaDbVariables(): Promise<Record<string, string>> {
-  const rows: any[] = await prisma.$queryRawUnsafe('SHOW GLOBAL VARIABLES');
-  const map: Record<string, string> = {};
-  for (const row of rows) {
-    map[row.Variable_name] = row.Value;
-  }
-  return map;
-}
-
 export async function GET(request: NextRequest) {
   try {
     // ── 1. Auth check ──────────────────────────────────────────────────
@@ -59,10 +29,10 @@ export async function GET(request: NextRequest) {
       dbLatencyMs = null;
     }
 
-    // ── 3. MariaDB version ─────────────────────────────────────────────
+    // ── 3. PostgreSQL version ──────────────────────────────────────────
     let dbVersion: string | null = null;
     try {
-      const versionRows: any[] = await prisma.$queryRawUnsafe('SELECT VERSION() as ver');
+      const versionRows: any[] = await prisma.$queryRawUnsafe('SELECT version() as ver');
       if (versionRows.length > 0) {
         dbVersion = versionRows[0].ver || null;
       }
@@ -79,35 +49,42 @@ export async function GET(request: NextRequest) {
       dataLength: number;
       indexLength: number;
       rowCount: number;
-      engine: string;
     }> = [];
 
     try {
-      const tableStatus: any[] = await prisma.$queryRawUnsafe(
-        'SHOW TABLE STATUS FROM erp_db'
-      );
+      const tableStats: any[] = await prisma.$queryRawUnsafe(`
+        SELECT
+          c.relname AS table_name,
+          pg_total_relation_size(c.oid) AS total_size,
+          pg_relation_size(c.oid) AS data_size,
+          pg_indexes_size(c.oid) AS index_size,
+          c.reltuples::bigint AS row_count
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+        ORDER BY pg_total_relation_size(c.oid) DESC
+      `);
 
-      for (const row of tableStatus) {
-        const dataLength = Number(row.Data_length) || 0;
-        const indexLength = Number(row.Index_length) || 0;
-        const rows = Number(row.Rows) || 0;
-        const engine = row.Engine || 'InnoDB';
-        const name = row.Name;
+      for (const row of tableStats) {
+        const dataLength = Number(row.data_size) || 0;
+        const indexLength = Number(row.index_size) || 0;
+        const rows = Number(row.row_count) || 0;
+        const name = row.table_name;
 
         totalDataBytes += dataLength;
         totalIndexBytes += indexLength;
         rowCounts[name] = rows;
 
         if (dataLength > 0 || indexLength > 0) {
-          allTableData.push({ tableName: name, dataLength, indexLength, rowCount: rows, engine });
+          allTableData.push({ tableName: name, dataLength, indexLength, rowCount: rows });
         }
       }
     } catch (err: any) {
-      console.error('MariaDB monitor: SHOW TABLE STATUS failed:', err.message);
+      console.error('PostgreSQL monitor: table size query failed:', err.message);
     }
 
     // ── 5. Top 15 tables by data size ──────────────────────────────────
-    allTableData.sort((a, b) => b.dataLength - a.dataLength);
+    allTableData.sort((a, b) => (b.dataLength + b.indexLength) - (a.dataLength + a.indexLength));
     const topTables = allTableData.slice(0, 15).map((t) => ({
       tableName: t.tableName,
       sizePretty: formatBytes(t.dataLength + t.indexLength),
@@ -115,101 +92,88 @@ export async function GET(request: NextRequest) {
       dataSizePretty: formatBytes(t.dataLength),
       indexSizePretty: formatBytes(t.indexLength),
       rowCount: t.rowCount,
-      engine: t.engine,
     }));
 
-    // ── 6. MariaDB Global Status (realtime metrics) ────────────────────
-    let status: Record<string, string> = {};
-    let variables: Record<string, string> = {};
+    // ── 6. PostgreSQL pg_stat_database metrics ──────────────────────────
+    let dbStats: Record<string, any> = {};
     try {
-      [status, variables] = await Promise.all([
-        getMariaDbStatus(),
-        getMariaDbVariables(),
-      ]);
+      const statsRows: any[] = await prisma.$queryRawUnsafe(`
+        SELECT * FROM pg_stat_database WHERE datname = current_database()
+      `);
+      if (statsRows.length > 0) dbStats = statsRows[0];
     } catch (err: any) {
-      console.error('MariaDB monitor: SHOW STATUS/VARIABLES failed:', err.message);
+      console.error('PostgreSQL monitor: pg_stat_database failed:', err.message);
     }
 
-    // Connection info
-    const currentConnections = Number(status['Threads_connected']) || 0;
-    const maxUsedConnections = Number(status['Max_used_connections']) || 0;
-    const maxConnections = Number(variables['max_connections']) || 151;
-    const connectionPercent = maxConnections > 0 ? Math.round((currentConnections / maxConnections) * 100) : 0;
-
-    // Uptime
-    const uptimeSeconds = Number(status['Uptime']) || 0;
-    const uptimeFormatted = uptimeSeconds > 0 ? formatUptime(uptimeSeconds) : 'Unknown';
-
-    // Query performance
-    const questions = Number(status['Questions']) || 0;
-    const queriesPerSec = uptimeSeconds > 0 ? parseFloat((questions / uptimeSeconds).toFixed(1)) : 0;
-    const slowQueries = Number(status['Slow_queries']) || 0;
-    const comSelect = Number(status['Com_select']) || 0;
-    const comInsert = Number(status['Com_insert']) || 0;
-    const comUpdate = Number(status['Com_update']) || 0;
-    const comDelete = Number(status['Com_delete']) || 0;
-
-    // InnoDB Buffer Pool
-    const bufferPoolSize = Number(variables['innodb_buffer_pool_size']) || 0;
-    const bufferPoolPagesTotal = Number(status['Innodb_buffer_pool_pages_total']) || 0;
-    const bufferPoolPagesFree = Number(status['Innodb_buffer_pool_pages_free']) || 0;
-    const bufferPoolPagesDirty = Number(status['Innodb_buffer_pool_pages_dirty']) || 0;
-    const bufferPoolHitRate = bufferPoolPagesTotal > 0
-      ? parseFloat((((bufferPoolPagesTotal - bufferPoolPagesFree) / bufferPoolPagesTotal) * 100).toFixed(1))
-      : 0;
-    const bufferPoolReads = Number(status['Innodb_buffer_pool_read_requests']) || 0;
-    const bufferPoolDiskReads = Number(status['Innodb_buffer_pool_reads']) || 0;
-    const bufferPoolRealHitRate = bufferPoolReads > 0
-      ? parseFloat((((bufferPoolReads - bufferPoolDiskReads) / bufferPoolReads) * 100).toFixed(1))
-      : 99.9;
-
-    // Key Cache
-    const keyCacheHitRate = (() => {
-      const keyReads = Number(status['Key_reads']) || 0;
-      const keyReadRequests = Number(status['Key_read_requests']) || 0;
-      return keyReadRequests > 0 ? parseFloat(((1 - keyReads / keyReadRequests) * 100).toFixed(1)) : 99.9;
-    })();
-
-    // Table Cache
-    const tableOpenCache = Number(variables['table_open_cache']) || 400;
-    const openTables = Number(status['Open_tables']) || 0;
-    const openedTables = Number(status['Opened_tables']) || 0;
-    const tableCacheHitRate = openedTables > 0
-      ? parseFloat(((openTables / (openTables + openedTables)) * 100).toFixed(1))
-      : 99.9;
-
-    // ── 7. Processlist ─────────────────────────────────────────────────
-    let processlist: Array<{
-      id: number;
+    // ── 7. Active connections from pg_stat_activity ─────────────────────
+    let activeQueries: Array<{
+      pid: number;
       user: string;
-      host: string;
-      db: string | null;
-      command: string;
-      time: number;
-      state: string | null;
-      info: string | null;
+      application: string | null;
+      clientAddr: string | null;
+      state: string;
+      query: string;
+      durationSec: number;
     }> = [];
 
     try {
-      const plRows: any[] = await prisma.$queryRawUnsafe('SHOW FULL PROCESSLIST');
-      processlist = plRows.map((row) => ({
-        id: Number(row.Id),
-        user: row.User,
-        host: row.Host,
-        db: row.db,
-        command: row.Command,
-        time: Number(row.Time),
-        state: row.State,
-        info: row.Info,
+      const actRows: any[] = await prisma.$queryRawUnsafe(`
+        SELECT
+          pid, usename, application_name, client_addr, state, query,
+          extract(epoch FROM now() - query_start)::int AS duration_seconds
+        FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND state != 'idle'
+        ORDER BY query_start
+      `);
+      activeQueries = actRows.map((row) => ({
+        pid: Number(row.pid),
+        user: row.usename,
+        application: row.application_name,
+        clientAddr: row.client_addr?.toString() || null,
+        state: row.state,
+        query: row.query,
+        durationSec: Number(row.duration_seconds) || 0,
       }));
     } catch (err: any) {
-      console.error('MariaDB monitor: SHOW PROCESSLIST failed:', err.message);
+      console.error('PostgreSQL monitor: pg_stat_activity failed:', err.message);
     }
 
-    // Active queries (running longer than 0s)
-    const activeQueries = processlist.filter(p => p.command === 'Query' && p.time > 0);
+    // Connection summary
+    let totalConnections = 0;
+    let idleConnections = 0;
+    try {
+      const connRows: any[] = await prisma.$queryRawUnsafe(`
+        SELECT state, count(*)::int FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid()
+        GROUP BY state
+      `);
+      for (const row of connRows) {
+        totalConnections += Number(row.count) || 0;
+        if (row.state === 'idle') idleConnections = Number(row.count) || 0;
+      }
+    } catch { /* ignore */ }
 
-    // ── 8. Disk usage (df -B1 /DATA) ───────────────────────────────────
+    // Uptime (from pg_postmaster_start_time)
+    let uptimeSeconds = 0;
+    let uptimeFormatted = 'Unknown';
+    try {
+      const uptimeRows: any[] = await prisma.$queryRawUnsafe(`
+        SELECT extract(epoch FROM now() - pg_postmaster_start_time())::int AS uptime
+      `);
+      if (uptimeRows.length > 0) {
+        uptimeSeconds = Number(uptimeRows[0].uptime) || 0;
+        const days = Math.floor(uptimeSeconds / 86400);
+        const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+        const parts: string[] = [];
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0 || days > 0) parts.push(`${hours}h`);
+        parts.push(`${minutes}m`);
+        uptimeFormatted = parts.join(' ');
+      }
+    } catch { /* ignore */ }
+
+    // ── 8. Disk usage ──────────────────────────────────────────────────
     let diskUsage: {
       totalBytes: number;
       usedBytes: number;
@@ -219,7 +183,7 @@ export async function GET(request: NextRequest) {
     } | null = null;
 
     try {
-      const dfOutput = execSync('df -B1 /DATA 2>/dev/null || df -B1 / 2>/dev/null', {
+      const dfOutput = execSync('df -B1 / 2>/dev/null', {
         encoding: 'utf-8',
         timeout: 5000,
       });
@@ -248,8 +212,7 @@ export async function GET(request: NextRequest) {
         database: {
           sizeBytes: totalDataBytes,
           sizePretty: formatBytes(totalDataBytes),
-          tableName: 'erp_db',
-          engine: 'MariaDB',
+          engine: 'PostgreSQL',
         },
         indexes: {
           sizeBytes: totalIndexBytes,
@@ -263,60 +226,26 @@ export async function GET(request: NextRequest) {
           dbVersion: dbVersion || 'Unknown',
           uptime: uptimeFormatted,
           uptimeSeconds,
-          host: '192.168.100.64',
-          maxConnections,
         },
 
-        // Connection Stats (realtime)
+        // Connection Stats
         connections: {
-          current: currentConnections,
-          maxUsed: maxUsedConnections,
-          maxAllowed: maxConnections,
-          percent: connectionPercent,
-        },
-
-        // Query Performance (realtime)
-        queryPerformance: {
-          questions,
-          queriesPerSec,
-          slowQueries,
-          comSelect,
-          comInsert,
-          comUpdate,
-          comDelete,
-        },
-
-        // Buffer Pool (realtime)
-        bufferPool: {
-          size: bufferPoolSize,
-          sizePretty: formatBytes(bufferPoolSize),
-          pagesTotal: bufferPoolPagesTotal,
-          pagesFree: bufferPoolPagesFree,
-          pagesDirty: bufferPoolPagesDirty,
-          hitRate: bufferPoolHitRate,
-          realHitRate: bufferPoolRealHitRate,
-        },
-
-        // Key Cache (realtime)
-        keyCache: {
-          hitRate: keyCacheHitRate,
-        },
-
-        // Table Cache (realtime)
-        tableCache: {
-          openTables,
-          openedTables,
-          openCacheLimit: tableOpenCache,
-          hitRate: tableCacheHitRate,
-        },
-
-        // Processlist (realtime)
-        processlist: {
-          total: processlist.length,
+          current: totalConnections,
           active: activeQueries.length,
-          connections: processlist.filter(p => p.command === 'Sleep').length,
-          activeQueries,
+          idle: idleConnections,
         },
+
+        // Query Stats (from pg_stat_database)
+        queryPerformance: {
+          totalTransactions: Number(dbStats.xact_commit) || 0,
+          totalRollbacks: Number(dbStats.xact_rollback) || 0,
+          deadlocks: Number(dbStats.deadlocks) || 0,
+          tempBytes: Number(dbStats.temp_bytes) || 0,
+          tempFiles: Number(dbStats.temp_files) || 0,
+        },
+
+        // Active Queries
+        activeQueries,
 
         // Disk Usage
         diskUsage,
@@ -324,14 +253,14 @@ export async function GET(request: NextRequest) {
         // Latency
         latency: { dbLatencyMs },
 
-        source: 'mariadb',
+        source: 'postgresql',
         timestamp: new Date().toISOString(),
       },
     });
   } catch (error: any) {
-    console.error('MariaDB monitor API error:', error.message);
+    console.error('PostgreSQL monitor API error:', error.message);
     return NextResponse.json(
-      { success: false, error: 'Gagal mengambil info MariaDB: ' + (error.message || 'Unknown error') },
+      { success: false, error: 'Gagal mengambil info database: ' + (error.message || 'Unknown error') },
       { status: 500 }
     );
   }

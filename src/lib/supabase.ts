@@ -191,8 +191,8 @@ function parseSelectString(selectStr: string): {
   for (const part of parts) {
     const trimmed = part.trim();
 
-    // Check for embedded relation: 'alias:table_name(fields)'
-    const embedMatch = trimmed.match(/^(\w+):(\w+)\(([^)]*)\)$/);
+    // Check for embedded relation: 'alias:table_name!fkey_hint(fields)' or 'alias:table_name(fields)'
+    const embedMatch = trimmed.match(/^(\w+):(\w+)(?:![\w.]+)?\(([^)]*)\)$/);
     if (embedMatch) {
       const alias = embedMatch[1];
       const tableName = embedMatch[2];
@@ -208,17 +208,19 @@ function parseSelectString(selectStr: string): {
         if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
           Object.assign(nestedInclude, nestedParse.includeConfig);
         }
+        // Use alias (camelCase) as include key so Prisma matches the relation name
+        const includeKey = snakeToCamel(alias);
         if (Object.keys(nestedInclude).length === 0) {
-          includeConfig[modelName] = true;
+          includeConfig[includeKey] = true;
         } else {
-          includeConfig[modelName] = nestedInclude;
+          includeConfig[includeKey] = nestedInclude;
         }
       }
       continue;
     }
 
-    // Check for direct relation: 'table_name(fields)'
-    const directEmbedMatch = trimmed.match(/^(\w+)\(([^)]*)\)$/);
+    // Check for direct relation: 'table_name!fkey_hint(fields)' or 'table_name(fields)'
+    const directEmbedMatch = trimmed.match(/^(\w+)(?:![\w.]+)?\(([^)]*)\)$/);
     if (directEmbedMatch) {
       const tableName = directEmbedMatch[1];
       const nestedFields = directEmbedMatch[2];
