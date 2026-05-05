@@ -1067,7 +1067,7 @@ export default function ProductsModule() {
                       </div>
                       <div className="flex items-center gap-1 justify-end mt-1">
                         {/* Stock badge — clickable to open quick stock update */}
-                        {isTracking && p.hasAccess !== false && ['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') ? (
+                        {p.hasAccess !== false && ['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') ? (
                           <Button
                             variant={isLow ? "destructive" : "secondary"}
                             size="sm"
@@ -1094,12 +1094,10 @@ export default function ProductsModule() {
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit Produk
                               </DropdownMenuItem>
-                              {isTracking && (
-                                <DropdownMenuItem onClick={() => setShowStock(p)}>
-                                  <PencilLine className="w-4 h-4 mr-2" />
-                                  Update Stok
-                                </DropdownMenuItem>
-                              )}
+                              <DropdownMenuItem onClick={() => setShowStock(p)}>
+                                <PencilLine className="w-4 h-4 mr-2" />
+                                Update Stok
+                              </DropdownMenuItem>
                               {user?.role === 'super_admin' && (
                               <DropdownMenuSeparator />
                               )}

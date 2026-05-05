@@ -177,3 +177,21 @@ Stage Summary:
 - Dashboard now shows correct totals (totalSales, totalProfit, todaySales, monthlySales)
 - Quick stock update accessible via clickable stock badge on every product card
 - Files modified: src/app/api/dashboard/route.ts, src/components/erp/ProductsModule.tsx
+
+---
+Task ID: 9
+Agent: Main
+Task: Fix quick update stok not visible on product cards
+
+Work Log:
+- Investigated: stock update button only showed when trackStock=true
+- Found ALL products in DB have trackStock=false
+- Root cause: condition `isTracking && ...` prevented button from rendering for all products
+- Fix: Removed `isTracking` check from stock badge button and dropdown menu
+- Now "Update Stok" is always visible for super_admin/keuangan/gudang regardless of trackStock setting
+- Stock badge on card is clickable (PackageSearch icon + stock amount) → opens StockForm dialog
+
+Stage Summary:
+- Quick update stock button now visible on ALL product cards
+- Dropdown "Update Stok" menu always available (no isTracking gate)
+- File modified: src/components/erp/ProductsModule.tsx
