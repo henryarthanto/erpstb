@@ -19,9 +19,9 @@ model CustomRole {
   id          String   @id @default(cuid())
   name        String   @unique  // e.g., "OB", "Sopir", "Security", "Driver"
   description String?
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdById String   @map("createdById")
+  createdAt   DateTime @default(now()) @map("createdAt")
+  updatedAt   DateTime @updatedAt @map("updatedAt")
   
   createdBy   User     @relation("CustomRoleCreator", fields: [createdById], references: [id])
   users       User[]
@@ -137,7 +137,7 @@ model Product {
   category            String?
   unit                String?  // kg, pcs, box (main unit)
   subUnit             String?  @map("sub_unit") // pack, pcs, etc (sub unit within main unit)
-  conversionRate      Decimal  @default(1) @db.Decimal(15,2)  // how many subUnits per 1 main unit (e.g., 10 means 1 box = 10 pack)
+  conversionRate      Decimal  @default(1) @db.Decimal(15,2) @map("conversion_rate")  // how many subUnits per 1 main unit (e.g., 10 means 1 box = 10 pack)
   globalStock         Decimal  @default(0) @db.Decimal(15,3) @map("global_stock") // stored in smallest unit (subUnit)
   avgHpp              Decimal  @default(0) @db.Decimal(15,2) @map("avg_hpp") // Cost price (HPP) per subUnit
   sellingPrice        Decimal  @default(0) @db.Decimal(15,2) @map("selling_price") // Selling price per main unit
@@ -436,7 +436,7 @@ model Payment {
   transactionId String   @map("transaction_id")
   receivedById  String   @map("received_by_id")
   amount        Decimal @db.Decimal(15,2)
-  paymentMethod String   // cash, transfer, giro
+  paymentMethod String   @map("paymentMethod") // cash, transfer, giro
   cashBoxId     String?  @map("cash_box_id")
   bankAccountId String?  @map("bank_account_id")
   bankName      String?  @map("bank_name")
@@ -873,10 +873,10 @@ model ReceivableFollowUp {
 model Log {
   id        String   @id @default(cuid())
   type      String   // activity, error, audit
-  userId    String?
+  userId    String?   @map("userId")
   action    String
   entity    String?
-  entityId  String?
+  entityId  String?   @map("entityId")
   payload   String?  // JSON
   message   String?
   createdAt DateTime @default(now()) @map("created_at")
