@@ -5,7 +5,7 @@ import {
   Smartphone, Clock, CheckCircle2, XCircle, Loader2,
   ChevronDown, ChevronUp, AlertCircle, User, Phone,
   Banknote, Truck, MessageSquare, CircleDollarSign,
-  ImageIcon, CreditCard, UserCheck, UserX, Wallet,
+  ImageIcon, CreditCard, UserCheck, UserX, Wallet, Tag,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -549,7 +549,10 @@ function PWAOrderCard({
   const [prices, setPrices] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     (order.items || []).forEach((item: any) => {
-      if (item.product?.sellingPrice) {
+      // Priority: deal price > selling price > empty
+      if (item.dealPrice && item.dealPrice > 0) {
+        initial[item.id] = String(item.dealPrice);
+      } else if (item.product?.sellingPrice) {
         initial[item.id] = String(item.product.sellingPrice);
       } else {
         initial[item.id] = '';
@@ -699,11 +702,20 @@ function PWAOrderCard({
                   : (item.product?.unit || 'pcs');
                 const priceVal = parseFloat(prices[item.id]) || 0;
                 const subtotal = priceVal * item.qty;
+                const hasDealPrice = item.dealPrice && item.dealPrice > 0;
 
                 return (
                   <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.productName}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium truncate">{item.productName}</p>
+                        {hasDealPrice && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">
+                            <Tag className="w-2.5 h-2.5" />
+                            Deal {formatCurrency(item.dealPrice)}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {item.qty} {unitLabel}
                         {showHpp && item.product?.avgHpp > 0 && (
@@ -720,7 +732,7 @@ function PWAOrderCard({
                         value={prices[item.id]}
                         onChange={(e) => handlePriceChange(item.id, e.target.value)}
                         className="w-32 h-8 text-sm text-right"
-                        placeholder="0"
+                        placeholder={hasDealPrice ? formatCurrency(item.dealPrice) : '0'}
                       />
                     </div>
                     <div className="w-28 text-right">

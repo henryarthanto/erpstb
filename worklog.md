@@ -241,3 +241,44 @@ Stage Summary:
   3. Payment status updated with optimistic lock (count verification)
   4. Courier cash credited via atomic RPC
 - Files modified: src/lib/supabase.ts (executeUpdate), src/app/api/courier/deliver/route.ts
+
+---
+Task ID: 12
+Agent: Main
+Task: Fix PWA order pricing — deal prices not saving + pre-fill with deal price
+
+Work Log:
+- Investigated PWA order approval flow end-to-end
+- Found 3 bugs:
+
+**Bug 1 (Critical): upsert() in supabase.ts was broken**
+- `upsert()` method just set `this.operation = 'insert'` — it ignored `onConflict` option completely
+- Result: First upsert works (insert), second one fails with unique constraint violation
+- The error was caught by try/catch in approve route and silently logged
+- Fix: Added proper `executeUpsert()` method that:
+  - Parses onConflict fields (e.g. "customer_id,product_id")
+  - Tries findFirst with conflict fields as WHERE
+  - If exists → update (remove conflict fields, id, createdAt from data)
+  - If not exists → create
+
+**Bug 2: Pending orders API didn't fetch deal prices**
+- `/api/pwa-orders/pending` only returned `product.sellingPrice`, not customer's deal price
+- Approval form pre-filled with global selling price instead of negotiated deal price
+- Fix: Added batch fetch of `customer_prices` for all customers in pending orders
+- Each item now includes `dealPrice` and `dealSubUnitPrice` fields
+
+**Bug 3: PWAOrdersModule didn't show deal price info**
+- Price pre-fill only used `sellingPrice`, ignored deal prices entirely
+- No visual indicator of existing negotiated prices
+- Fix: Priority order for pre-fill: deal price > selling price > empty
+- Added green "Deal Rp XX" badge on items that have existing deal prices
+- Price input placeholder shows deal price when available
+
+- Lint clean (only pre-existing errors in keep-alive.js)
+- Server compiles without errors
+
+Stage Summary:
+- Deal prices now properly saved AND updated on every PWA order approval (upsert works)
+- Approval form pre-fills with customer's negotiated deal price (not global sellingPrice)
+- Visual badge shows "Deal Rp XX" so sales knows the previous agreement
+- Files modified: src/lib/supabase.ts, src/app/api/pwa-orders/pending/route.ts, src/components/erp/PWAOrdersModule.tsx

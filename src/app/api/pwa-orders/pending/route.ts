@@ -56,17 +56,44 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Fetch customer_prices for all customers in these orders (deal prices)
+    const customerIds = [...new Set(filteredOrders.map((t: any) => t.customer_id).filter(Boolean))];
+    let dealPriceMap: Record<string, Record<string, any>> = {};
+    if (customerIds.length > 0) {
+      try {
+        const { data: dealPrices } = await db
+          .from('customer_prices')
+          .select('*')
+          .eq('is_active', true)
+          .in('customer_id', customerIds);
+        if (dealPrices) {
+          for (const dp of dealPrices) {
+            const cid = dp.customer_id;
+            const pid = dp.product_id;
+            if (!dealPriceMap[cid]) dealPriceMap[cid] = {};
+            dealPriceMap[cid][pid] = dp;
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
     const ordersCamel = filteredOrders.map((t: any) => {
       const camel = toCamelCase(t);
+      const customerDealPrices = dealPriceMap[t.customer_id] || {};
       return {
         ...camel,
         createdBy: camel.createdBy || null,
         customer: camel.customer || null,
         unit: camel.unit || null,
-        items: (camel.items || []).map((i: any) => ({
-          ...i,
-          product: i.product || null,
-        })),
+        items: (camel.items || []).map((i: any) => {
+          const dealPrice = customerDealPrices[i.productId];
+          return {
+            ...i,
+            product: i.product || null,
+            dealPrice: dealPrice ? Number(dealPrice.deal_price) : null,
+            dealSubUnitPrice: dealPrice ? Number(dealPrice.sub_unit_price) : null,
+          };
+        }),
       };
     });
 

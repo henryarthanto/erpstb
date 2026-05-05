@@ -326,9 +326,10 @@ class PostgrestQueryBuilder {
   private selectFields: Record<string, boolean> | null = null;
   private includeConfig: Record<string, any> | null = null;
   private countMode: 'exact' | null = null;
-  private operation: 'select' | 'insert' | 'update' | 'delete' | null = null;
+  private operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert' | null = null;
   private insertData: any = null;
   private updateData: any = null;
+  private upsertConflict: string | null = null;
   private headOnly: boolean = false;
 
   constructor(tableName: string) {
@@ -488,8 +489,9 @@ class PostgrestQueryBuilder {
   // ─── UPSERT (simplified) ────────────────────────────────────
 
   upsert(data: any, options?: { onConflict?: string; count?: string }): this {
-    this.operation = 'insert';
+    this.operation = 'upsert';
     this.insertData = data;
+    this.upsertConflict = options?.onConflict || null;
     return this;
   }
 
@@ -522,6 +524,8 @@ class PostgrestQueryBuilder {
           return await this.executeUpdate();
         case 'delete':
           return await this.executeDelete();
+        case 'upsert':
+          return await this.executeUpsert();
         default:
           // If no operation specified, default to select
           return await this.executeSelect();
@@ -620,6 +624,82 @@ class PostgrestQueryBuilder {
       return result ? [result] : [];
     }
     return model.findMany(query);
+  }
+
+  // ─── UPSERT IMPLEMENTATION ─────────────────────────────────
+
+  private async executeUpsert(): Promise<PostgrestResult> {
+    const model = (prisma as any)[this.modelName];
+    if (!model) {
+      return { data: null, error: { message: `Unknown model: ${this.modelName}`, code: 'PGRST001' }, count: null };
+    }
+
+    const camelData = toCamelCaseDeep(this.insertData);
+    const conflictFields = this.upsertConflict
+      ? this.upsertConflict.split(',').map(f => snakeToCamel(f.trim()))
+      : null;
+
+    // Build include/select options from chained .select()
+    const createOptions: Record<string, any> = {};
+    if (this.selectFields && Object.keys(this.selectFields).length > 0) {
+      createOptions.select = { ...this.selectFields };
+      if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
+        Object.assign(createOptions.select, this.includeConfig);
+      }
+    } else if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
+      createOptions.include = this.includeConfig;
+    }
+
+    if (conflictFields && conflictFields.length > 0) {
+      // Parse onConflict fields into Prisma's expected format
+      // e.g. "customer_id,product_id" → { courierId_unitId: { ... } } or compound unique name
+      const whereClause: Record<string, any> = {};
+      for (const field of conflictFields) {
+        whereClause[field] = camelData[field];
+      }
+
+      // Try to find the unique constraint name from Prisma model
+      const uniqueKey = conflictFields.sort().map(f => f).join('_');
+      // Prisma uses camelCase fields joined with _ for compound unique names
+      // e.g. customer_id,product_id → customerId_productId
+      const compoundUniqueName = conflictFields.join('_');
+
+      // First, try to find existing record
+      const existing = await model.findFirst({
+        where: whereClause,
+      });
+
+      if (existing) {
+        // Update existing record
+        const updateFields: Record<string, any> = { ...camelData };
+        // Remove fields that are part of the unique constraint (they shouldn't change)
+        for (const field of conflictFields) {
+          delete updateFields[field];
+        }
+        // Also remove id and createdAt (they shouldn't change on update)
+        delete updateFields.id;
+        delete updateFields.createdAt;
+        // Remove undefined values
+        for (const key of Object.keys(updateFields)) {
+          if (updateFields[key] === undefined) delete updateFields[key];
+        }
+
+        const result = await model.update({
+          where: { id: existing.id },
+          data: updateFields,
+          ...createOptions,
+        });
+        return { data: toSnakeCaseDeep(result), error: null, count: 1 };
+      } else {
+        // Insert new record
+        const result = await model.create({ data: camelData, ...createOptions });
+        return { data: toSnakeCaseDeep(result), error: null, count: 1 };
+      }
+    } else {
+      // No conflict fields — just insert (fallback)
+      const result = await model.create({ data: camelData, ...createOptions });
+      return { data: toSnakeCaseDeep(result), error: null, count: 1 };
+    }
   }
 
   // ─── INSERT IMPLEMENTATION ─────────────────────────────────
