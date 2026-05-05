@@ -77,29 +77,31 @@ export async function GET(request: NextRequest) {
     const [periodRows, todayMonthRows, chartRows] = await Promise.all([
       // ── Query 1: Period summary ────────────────────────────────
       // All metrics scoped to the user-selected date range (filterStart → filterEnd)
+      // NOTE: ::numeric cast + double-quoted aliases prevent Prisma Decimal objects
+      // and ensure correct camelCase column names in result rows.
       withTimeout(safeQuery(
         prisma.$queryRaw`
           SELECT
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN total ELSE 0 END), 0) AS totalSales,
+                 THEN total ELSE 0 END), 0)::numeric AS "totalSales",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN total_profit ELSE 0 END), 0) AS totalProfit,
+                 THEN total_profit ELSE 0 END), 0)::numeric AS "totalProfit",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN paid_amount ELSE 0 END), 0) AS totalPaid,
+                 THEN paid_amount ELSE 0 END), 0)::numeric AS "totalPaid",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 AND payment_status != 'paid' THEN remaining_amount ELSE 0 END), 0) AS totalReceivables,
+                 AND payment_status != 'paid' THEN remaining_amount ELSE 0 END), 0)::numeric AS "totalReceivables",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN total_hpp ELSE 0 END), 0) AS totalHpp,
+                 THEN total_hpp ELSE 0 END), 0)::numeric AS "totalHpp",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN hpp_paid ELSE 0 END), 0) AS hppInHand,
+                 THEN hpp_paid ELSE 0 END), 0)::numeric AS "hppInHand",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN hpp_unpaid ELSE 0 END), 0) AS hppUnpaid,
+                 THEN hpp_unpaid ELSE 0 END), 0)::numeric AS "hppUnpaid",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN profit_paid ELSE 0 END), 0) AS profitInHand,
+                 THEN profit_paid ELSE 0 END), 0)::numeric AS "profitInHand",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN profit_unpaid ELSE 0 END), 0) AS profitUnpaid,
+                 THEN profit_unpaid ELSE 0 END), 0)::numeric AS "profitUnpaid",
             COUNT(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN 1 END) AS periodTxCount
+                 THEN 1 END)::int AS "periodTxCount"
           FROM transactions
           WHERE transaction_date >= ${filterStart} AND transaction_date <= ${filterEnd}
             ${unitFilter}
@@ -116,16 +118,16 @@ export async function GET(request: NextRequest) {
           SELECT
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
                  AND transaction_date >= ${today} AND transaction_date <= ${todayEnd}
-                 THEN total ELSE 0 END), 0) AS todaySales,
+                 THEN total ELSE 0 END), 0)::numeric AS "todaySales",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
                  AND transaction_date >= ${today} AND transaction_date <= ${todayEnd}
-                 THEN total_profit ELSE 0 END), 0) AS todayProfit,
+                 THEN total_profit ELSE 0 END), 0)::numeric AS "todayProfit",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
                  AND transaction_date >= ${monthStart} AND transaction_date <= ${monthEnd}
-                 THEN total ELSE 0 END), 0) AS monthlySales,
+                 THEN total ELSE 0 END), 0)::numeric AS "monthlySales",
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
                  AND transaction_date >= ${monthStart} AND transaction_date <= ${monthEnd}
-                 THEN total_profit ELSE 0 END), 0) AS monthlyProfit
+                 THEN total_profit ELSE 0 END), 0)::numeric AS "monthlyProfit"
           FROM transactions
           WHERE transaction_date >= ${todayMonthStart} AND transaction_date <= ${todayMonthEnd}
             ${unitFilter}
@@ -140,9 +142,9 @@ export async function GET(request: NextRequest) {
         prisma.$queryRaw`
           SELECT TO_CHAR(transaction_date, 'YYYY-MM-DD') AS date,
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN total ELSE 0 END), 0) AS sales,
+                 THEN total ELSE 0 END), 0)::numeric AS sales,
             COALESCE(SUM(CASE WHEN type = 'sale' AND status IN ('approved', 'paid')
-                 THEN total_profit ELSE 0 END), 0) AS profit
+                 THEN total_profit ELSE 0 END), 0)::numeric AS profit
           FROM transactions
           WHERE transaction_date >= ${filterStart} AND transaction_date <= ${filterEnd}
             ${unitFilter}
