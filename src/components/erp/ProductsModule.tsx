@@ -1069,7 +1069,7 @@ export default function ProductsModule() {
                         <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
                           {isTracking ? displayStockStr : 'Nonaktif'}
                         </Badge>
-                        {isTracking && p.hasAccess !== false && user?.role !== 'kurir' && user?.role !== 'sales' && user?.role !== 'viewer' && user?.role !== 'super_admin' && (
+                        {isTracking && p.hasAccess !== false && (user?.role === 'super_admin' || user?.role === 'keuangan') && (
                           <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]" onClick={() => setShowStock(p)}>
                             <Package className="w-3 h-3" />
                           </Button>

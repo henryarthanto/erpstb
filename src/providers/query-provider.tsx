@@ -9,8 +9,10 @@ const isSTB = typeof window !== 'undefined' && (window as any).__STB_MODE__ === 
 // Polling configuration optimized for multi-user concurrent access
 // With 10+ users, we must minimize unnecessary DB queries
 export const POLLING_CONFIG = {
-  // Default: No automatic polling — data refreshes on window focus or explicit invalidation
-  refetchInterval: false as const,
+  // Default: 60s polling as fallback when WebSocket is disconnected.
+  // WebSocket realtime sync (useRealtimeSync) handles instant updates.
+  // This ensures all modules auto-refresh even without WS connection.
+  refetchInterval: isSTB ? 60_000 : 45_000,
   refetchOnWindowFocus: true,
   // STB: 60s stale time to reduce DB load; Standard: 30s
   staleTime: isSTB ? 60_000 : 30_000,

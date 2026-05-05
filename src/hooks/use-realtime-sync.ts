@@ -32,6 +32,7 @@ const TABLE_TO_QUERY_KEYS: Record<string, string[][]> = {
     ['pwa-approved-unpaid-orders'],
     ['sales-dashboard'],
     ['courier-dashboard'],
+    ['deliveries'],
   ],
   transaction_items: [
     ['products', 'stock-movements'],

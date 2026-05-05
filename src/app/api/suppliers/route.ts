@@ -3,6 +3,7 @@ import { db } from '@/lib/supabase';
 import { toCamelCase, rowsToCamelCase, createLog, generateId } from '@/lib/supabase-helpers';
 import { verifyAuthUser } from '@/lib/token';
 import { validateBody, validateQuery, supplierSchemas, commonSchemas } from '@/lib/validators';
+import { wsSupplierUpdate } from '@/lib/ws-dispatch';
 
 export async function GET(request: NextRequest) {
   try {
@@ -94,6 +95,9 @@ export async function POST(request: NextRequest) {
       entityId: supplierCamel.id,
       message: `Supplier ${supplierCamel.name} created`
     });
+
+    // Broadcast realtime update
+    wsSupplierUpdate({ supplierId: supplierCamel.id });
 
     return NextResponse.json({ supplier: supplierCamel });
   } catch (error: any) {

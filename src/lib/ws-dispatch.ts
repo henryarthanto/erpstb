@@ -99,6 +99,24 @@ export function wsTaskUpdate(data?: WsEventData): void {
   } catch { /* non-blocking */ }
 }
 
+// ─── Supplier ─────────────────────────────────────────────────────
+export function wsSupplierUpdate(data?: WsEventData): void {
+  try {
+    broadcastChange('suppliers', 'UPDATE', data?.supplierId as string, data);
+    broadcastChange('dashboard', 'UPDATE', undefined, data);
+  } catch { /* non-blocking */ }
+}
+
+// ─── Cashback ───────────────────────────────────────────────────────
+export function wsCashbackUpdate(data?: WsEventData): void {
+  try {
+    broadcastChange('cashback_config', 'UPDATE', undefined, data);
+    broadcastChange('cashback_log', 'UPDATE', undefined, data);
+    broadcastChange('customers', 'UPDATE', undefined, data);
+    broadcastChange('dashboard', 'UPDATE', undefined, data);
+  } catch { /* non-blocking */ }
+}
+
 // ─── Generic ────────────────────────────────────────────────────────
 export function wsEmit(event: string, data?: WsEventData): void {
   try {

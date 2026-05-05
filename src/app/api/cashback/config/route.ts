@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { toCamelCase, generateId } from '@/lib/supabase-helpers';
 import { verifyAuthUser, verifyAndGetAuthUser } from '@/lib/token';
+import { wsCashbackUpdate } from '@/lib/ws-dispatch';
 
 // =====================================================================
 // Cashback Config — Super Admin only
@@ -109,6 +110,9 @@ export async function PUT(request: NextRequest) {
       console.error('Cashback config update error:', error);
       return NextResponse.json({ error: 'Gagal menyimpan konfigurasi' }, { status: 500 });
     }
+
+    // Broadcast realtime update
+    wsCashbackUpdate({});
 
     return NextResponse.json({
       success: true,

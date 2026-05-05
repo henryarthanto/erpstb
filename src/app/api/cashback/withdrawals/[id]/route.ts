@@ -3,6 +3,7 @@ import { db } from '@/lib/supabase';
 import { toCamelCase, createEvent, generateId } from '@/lib/supabase-helpers';
 import { verifyAndGetAuthUser } from '@/lib/token';
 import { atomicUpdateBalance, atomicUpdatePoolBalance } from '@/lib/atomic-ops';
+import { wsCashbackUpdate } from '@/lib/ws-dispatch';
 
 // =====================================================================
 // Cashback Withdrawal Processing — Super Admin & Keuangan (Finance)
@@ -198,6 +199,9 @@ export async function PATCH(
       destinationType: data.destinationType || null,
       rejectionReason: data.rejectionReason || null,
     }).catch(() => {});
+
+    // Broadcast realtime update for cashback modules
+    wsCashbackUpdate({ withdrawalId: id });
 
     return NextResponse.json({
       success: true,

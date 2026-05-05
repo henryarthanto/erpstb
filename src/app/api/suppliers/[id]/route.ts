@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { toCamelCase, createLog } from '@/lib/supabase-helpers';
 import { verifyAuthUser } from '@/lib/token';
+import { wsSupplierUpdate } from '@/lib/ws-dispatch';
 
 // Helper: enforce super_admin or keuangan role (mirrors /api/suppliers POST)
 async function enforceSupplierRole(authUserId: string): Promise<{ authorized: boolean; response?: NextResponse }> {
@@ -98,6 +99,8 @@ export async function PATCH(
       message: `Supplier ${supplierCamel.name} diupdate`
     });
 
+    wsSupplierUpdate({ supplierId: id });
+
     return NextResponse.json({ supplier: supplierCamel });
   } catch (error: any) {
     console.error('Update supplier error:', error);
@@ -161,6 +164,8 @@ export async function DELETE(
       entityId: id,
       message: `Supplier ${supplierCamel.name} dihapus`
     });
+
+    wsSupplierUpdate({ supplierId: id });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
