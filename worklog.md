@@ -604,3 +604,23 @@ Stage Summary:
 - All 11 bugs fixed in 7 files
 - Files: supabase.ts, docker-compose.yml, Dockerfile, deploy/install.sh, next.config.ts, .env.example, .env
 - Pushed to main branch (commit ee6b897)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix STB login error - push to GitHub & trigger CI/CD
+
+Work Log:
+- Identified root cause: Docker image on GHCR is old (pre-Prisma migration)
+- CI/CD never successfully built a new image (GitHub runner unavailable)
+- User's STB shows "Terjadi kesalahan server" on login because old image code doesn't match current database
+- Verified .env and docker-compose.yml are in git repo
+- STB successfully pulled latest repo files via `git reset --hard origin/main`
+- Pushed commit to trigger CI/CD build
+- Prepared alternative: direct Docker build on STB
+
+Stage Summary:
+- Pushed commit 5a81d48 to trigger Docker CI/CD
+- CI/CD workflow at `.github/workflows/docker-publish.yml` - builds multi-arch (amd64+arm64)
+- Image: ghcr.io/henryarthanto/razkindo-erp:latest
+- Fallback: `docker build -t razkindo-erp:latest .` on STB if CI/CD fails
