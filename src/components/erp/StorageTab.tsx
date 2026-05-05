@@ -80,10 +80,10 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
 
   // ═══════════════════════════════════════════════════════════════
   // WEBSOCKET — realtime monitoring via socket.io (port 3004)
-  // Replaces polling: system-stats (1s) + mariadb-monitor (5s)
+  // Replaces polling: system-stats (1s) + database-monitor (5s)
   // ═══════════════════════════════════════════════════════════════
   const [systemData, setSystemData] = useState<any>(null);
-  const [mariadbData, setMariadbData] = useState<any>(null);
+  const [dbMonitorData, setDbMonitorData] = useState<any>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
@@ -108,7 +108,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
       setWsConnected(false);
     });
 
-    socket.on('monitor:data', (data: { systemStats: any; mariaDbStats: any; timestamp: string }) => {
+    socket.on('monitor:data', (data: { systemStats: any; pgStats: any; timestamp: string }) => {
       if (data.systemStats) {
         // Map WebSocket system stats to the shape the UI expects
         const s = data.systemStats;
@@ -149,24 +149,19 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
           } : null,
         });
       }
-      if (data.mariaDbStats) {
-        // Map WebSocket MariaDB stats to the shape the UI expects
-        const m = data.mariaDbStats;
-        const mem = m.memory || {};
+      if (data.pgStats) {
+        // Map WebSocket PostgreSQL stats to the shape the UI expects
+        const m = data.pgStats;
         const conn = m.connections || {};
         const q = m.queries || {};
-        const bp = m.bufferPool || {};
-        const cache = m.cache || {};
-        const innodb = m.innodb || {};
-        const activeQueries = (m.processlist || []).filter((p: any) => p.command === 'Query' && p.time > 0);
-        const sleepingThreads = (m.processlist || []).filter((p: any) => p.command === 'Sleep').length;
+        const activeQueries = (m.processlist || []).filter((p: any) => p.state === 'active');
+        const idleConns = (m.processlist || []).filter((p: any) => p.state === 'idle').length;
 
-        setMariadbData({
+        setDbMonitorData({
           database: {
             sizeBytes: 0, // will be fetched from API if needed
             sizePretty: '—',
-            tableName: 'erp_db',
-            engine: 'MariaDB',
+            engine: 'PostgreSQL',
           },
           indexes: { sizePretty: '—' },
           topTables: [],
@@ -175,51 +170,27 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
             dbVersion: m.version || 'Unknown',
             uptime: m.uptime ? `${Math.floor(m.uptime / 86400)}d ${Math.floor((m.uptime % 86400) / 3600)}h ${Math.floor((m.uptime % 3600) / 60)}m` : '—',
             uptimeSeconds: m.uptime,
-            host: '192.168.100.64',
-            maxConnections: conn.maxConnections || 151,
+            maxConnections: conn.maxConnections || 100,
           },
           connections: {
-            current: conn.current || conn.threadsConnected || 0,
-            maxUsed: conn.maxUsedConnections || 0,
-            maxAllowed: conn.maxConnections || 151,
+            current: conn.current || 0,
+            maxAllowed: conn.maxConnections || 100,
             percent: conn.maxConnections ? Math.round(((conn.current || 0) / conn.maxConnections) * 100) : 0,
           },
           queryPerformance: {
-            queriesPerSec: q.queriesPerSecond || 0,
-            slowQueries: q.slowQueries || 0,
-            questions: q.totalQuestions || 0,
-            comSelect: q.comSelect || 0,
-            comInsert: q.comInsert || 0,
-            comUpdate: q.comUpdate || 0,
-            comDelete: q.comDelete || 0,
-          },
-          bufferPool: {
-            size: bp.size || 0,
-            sizePretty: formatBytesFromNum(bp.size || 0),
-            pagesTotal: bp.pagesTotal || 0,
-            pagesFree: bp.pagesFree || 0,
-            pagesDirty: bp.pagesDirty || 0,
-            hitRate: bp.hitRate || 0,
-            realHitRate: bp.hitRate || 0,
-          },
-          keyCache: {
-            hitRate: cache.keyCacheHitRate || 99.9,
-          },
-          tableCache: {
-            openTables: cache.openTables || 0,
-            openedTables: 0,
-            openCacheLimit: cache.openTablesLimit || 400,
-            hitRate: cache.tableOpenCacheHitRate || 99.9,
+            totalTransactions: q.totalTransactions || 0,
+            totalRollbacks: q.totalRollbacks || 0,
+            deadlocks: q.deadlocks || 0,
           },
           processlist: {
             total: (m.processlist || []).length,
             active: activeQueries.length,
-            connections: sleepingThreads,
+            idle: idleConns,
             activeQueries,
           },
           latency: { dbLatencyMs: m.latencyMs },
-          diskUsage: null, // fetched from separate API if needed
-          source: 'mariadb-ws',
+          diskUsage: null,
+          source: 'postgresql-ws',
           timestamp: data.timestamp,
         });
       }
@@ -237,7 +208,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   }, []);
 
   const systemLoading = !systemData;
-  const mariadbLoading = !mariadbData;
+  const dbMonitorLoading = !dbMonitorData;
 
   // Storage data (still HTTP — not realtime)
   const { data: storageData, isLoading: storageLoading, isError: storageError, refetch: refetchStorage } = useQuery({
@@ -252,9 +223,9 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
     staleTime: 30_000,
   });
 
-  // One-time fetch for MariaDB table sizes (not realtime, refresh every 60s)
-  const { data: mariadbStatic } = useQuery({
-    queryKey: ['mariadb-static'],
+  // One-time fetch for PostgreSQL table sizes (not realtime, refresh every 60s)
+  const { data: dbMonitorStatic } = useQuery({
+    queryKey: ['db-monitor-static'],
     queryFn: async () => {
       const json = await apiFetch<{ success: boolean; data: any; error?: string }>('/api/storage/mariadb-monitor');
       if (!json.success) throw new Error(json.error);
@@ -265,17 +236,17 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
     staleTime: 60_000,
   });
 
-  // Merge static DB size data into WebSocket mariadbData
-  const mergedMariadb = (() => {
-    if (!mariadbData) return null;
-    if (!mariadbStatic) return mariadbData;
+  // Merge static DB size data into WebSocket dbMonitorData
+  const mergedDbMonitor = (() => {
+    if (!dbMonitorData) return null;
+    if (!dbMonitorStatic) return dbMonitorData;
     return {
-      ...mariadbData,
-      database: mariadbStatic.database || mariadbData.database,
-      indexes: mariadbStatic.indexes || mariadbData.indexes,
-      topTables: mariadbStatic.topTables || mariadbData.topTables,
-      rowCounts: mariadbStatic.rowCounts || mariadbData.rowCounts,
-      diskUsage: mariadbStatic.diskUsage || mariadbData.diskUsage,
+      ...dbMonitorData,
+      database: dbMonitorStatic.database || dbMonitorData.database,
+      indexes: dbMonitorStatic.indexes || dbMonitorData.indexes,
+      topTables: dbMonitorStatic.topTables || dbMonitorData.topTables,
+      rowCounts: dbMonitorStatic.rowCounts || dbMonitorData.rowCounts,
+      diskUsage: dbMonitorStatic.diskUsage || dbMonitorData.diskUsage,
     };
   })();
 
@@ -432,20 +403,20 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   const cleanable = storageData?.cleanable;
   const tableCounts = storageData?.database?.tableCounts;
 
-  // MariaDB monitor data (merged: realtime from WebSocket + static from HTTP)
-  const dbQuota = mergedMariadb?.database;
-  const topTables = mergedMariadb?.topTables;
-  const rowCounts = mergedMariadb?.rowCounts;
-  const indexes = mergedMariadb?.indexes;
-  const serverInfo = mergedMariadb?.serverInfo;
-  const mariadbConnections = mergedMariadb?.connections;
-  const queryPerf = mergedMariadb?.queryPerformance;
-  const bufferPool = mergedMariadb?.bufferPool;
-  const keyCache = mergedMariadb?.keyCache;
-  const tableCache = mergedMariadb?.tableCache;
-  const processInfo = mergedMariadb?.processlist;
-  const mariadbLatency = mergedMariadb?.latency;
-  const mariadbDisk = mergedMariadb?.diskUsage;
+  // PostgreSQL monitor data (merged: realtime from WebSocket + static from HTTP)
+  const dbQuota = mergedDbMonitor?.database;
+  const topTables = mergedDbMonitor?.topTables;
+  const rowCounts = mergedDbMonitor?.rowCounts;
+  const indexes = mergedDbMonitor?.indexes;
+  const serverInfo = mergedDbMonitor?.serverInfo;
+  const dbConnections = mergedDbMonitor?.connections;
+  const queryPerf = mergedDbMonitor?.queryPerformance;
+  const bufferPool = mergedDbMonitor?.bufferPool;
+  const keyCache = mergedDbMonitor?.keyCache;
+  const tableCache = mergedDbMonitor?.tableCache;
+  const processInfo = mergedDbMonitor?.processlist;
+  const dbLatency = mergedDbMonitor?.latency;
+  const dbDisk = mergedDbMonitor?.diskUsage;
 
   const CLEANUP_OPTIONS = [
     {
@@ -862,14 +833,14 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
         </CardContent>
       </Card>
 
-      {/* MariaDB Realtime Monitor */}
+      {/* PostgreSQL Realtime Monitor */}
       <Card className="border-violet-500/30">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <Database className="w-4 h-4 text-violet-500" />
-                MariaDB Realtime Monitor
+                PostgreSQL Realtime Monitor
                 {wsConnected ? (
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -882,7 +853,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                   </span>
                 )}
               </CardTitle>
-              <CardDescription>Realtime monitoring MariaDB via WebSocket</CardDescription>
+              <CardDescription>Realtime monitoring PostgreSQL via WebSocket</CardDescription>
             </div>
             <Badge variant="outline" className={cn("shrink-0 text-[10px]", wsConnected ? "border-emerald-300 text-emerald-600" : "border-red-300 text-red-600")}>
               <Wifi className="w-3 h-3 mr-1" /> WS {wsConnected ? '✓' : '✗'}
@@ -890,7 +861,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          {!mergedMariadb ? (
+          {!mergedDbMonitor ? (
             <div className="flex items-center justify-center py-6 text-muted-foreground">
               <RefreshCw className="w-5 h-5 animate-spin mr-2" />
               <span className="text-sm">Mengambil info database...</span>
@@ -906,7 +877,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                     </div>
                     <div>
                       <p className="font-medium text-sm">Database</p>
-                      <p className="text-xs text-muted-foreground">{dbQuota.engine || 'MariaDB'} — {dbQuota.tableName || 'erp_db'}</p>
+                      <p className="text-xs text-muted-foreground">{dbQuota.engine || 'PostgreSQL'}</p>
                     </div>
                   </div>
                   <Badge variant="outline" className="border-violet-300 text-violet-700 dark:text-violet-400 shrink-0">
@@ -938,7 +909,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                     <p className="font-bold text-sm">{indexes?.sizePretty || '-'}</p>
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50 border text-center">
-                    <p className="text-xs text-muted-foreground">MariaDB</p>
+                    <p className="text-xs text-muted-foreground">PostgreSQL</p>
                     <p className="font-bold text-sm font-mono text-xs">{serverInfo?.dbVersion?.split('-')[0] || '-'}</p>
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50 border text-center">
@@ -949,7 +920,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
               </div>
 
               {/* Disk Usage (if available) */}
-              {mariadbDisk && (
+              {dbDisk && (
                 <>
                   <div className="border-t" />
                   <div className="space-y-3">
@@ -959,43 +930,43 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground text-xs">{mariadbDisk.mountPoint || '/'}</span>
+                        <span className="text-muted-foreground text-xs">{dbDisk.mountPoint || '/'}</span>
                         <span className={cn(
                           "font-bold text-base",
-                          mariadbDisk.usedPercent > 90 ? "text-red-500" : mariadbDisk.usedPercent > 70 ? "text-amber-500" : "text-emerald-500"
+                          dbDisk.usedPercent > 90 ? "text-red-500" : dbDisk.usedPercent > 70 ? "text-amber-500" : "text-emerald-500"
                         )}>
-                          {mariadbDisk.usedPercent}%
+                          {dbDisk.usedPercent}%
                         </span>
                       </div>
                       <div className="w-full h-5 bg-muted rounded-full overflow-hidden relative">
                         <div
                           className={cn(
                             "h-full rounded-full transition-all duration-700",
-                            mariadbDisk.usedPercent > 90 ? "bg-red-500" : mariadbDisk.usedPercent > 70 ? "bg-amber-500" : "bg-emerald-500"
+                            dbDisk.usedPercent > 90 ? "bg-red-500" : dbDisk.usedPercent > 70 ? "bg-amber-500" : "bg-emerald-500"
                           )}
-                          style={{ width: `${Math.max(Math.min(mariadbDisk.usedPercent, 100), 2)}%` }}
+                          style={{ width: `${Math.max(Math.min(dbDisk.usedPercent, 100), 2)}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Terpakai: <span className="font-semibold text-foreground">{formatBytes(mariadbDisk.usedBytes)}</span></span>
-                        <span>Tersedia: <span className="font-semibold text-emerald-500">{formatBytes(mariadbDisk.availableBytes)}</span></span>
-                        <span>Total: {formatBytes(mariadbDisk.totalBytes)}</span>
+                        <span>Terpakai: <span className="font-semibold text-foreground">{formatBytes(dbDisk.usedBytes)}</span></span>
+                        <span>Tersedia: <span className="font-semibold text-emerald-500">{formatBytes(dbDisk.availableBytes)}</span></span>
+                        <span>Total: {formatBytes(dbDisk.totalBytes)}</span>
                       </div>
                     </div>
-                    {mariadbDisk.usedPercent > 80 && (
+                    {dbDisk.usedPercent > 80 && (
                       <div className={cn(
                         "flex items-start gap-2 p-2.5 rounded-lg text-xs",
-                        mariadbDisk.usedPercent > 90
+                        dbDisk.usedPercent > 90
                           ? "bg-red-50 border border-red-200 text-red-700"
                           : "bg-amber-50 border border-amber-200 text-amber-700"
                       )}>
                         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                         <div>
                           <p className="font-medium">
-                            {mariadbDisk.usedPercent > 90 ? 'Disk hampir penuh!' : 'Disk mulai penuh'}
+                            {dbDisk.usedPercent > 90 ? 'Disk hampir penuh!' : 'Disk mulai penuh'}
                           </p>
                           <p>
-                            {mariadbDisk.usedPercent > 90
+                            {dbDisk.usedPercent > 90
                               ? 'Segera bersihkan data lama (log, event) atau tambah storage.'
                               : 'Pertimbangkan untuk membersihkan data lama.'}
                           </p>
@@ -1011,7 +982,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
               <Database className="w-8 h-8 mx-auto mb-2 opacity-30" />
               <p className="text-sm font-medium">Tidak dapat membaca info database</p>
               <p className="text-xs mt-1 text-muted-foreground max-w-sm mx-auto">
-                {wsConnected ? 'Menunggu data dari MariaDB...' : 'WebSocket tidak terhubung. Pastikan service monitor-ws berjalan.'}
+                {wsConnected ? 'Menunggu data dari database...' : 'WebSocket tidak terhubung. Pastikan service monitor-ws berjalan.'}
               </p>
               {!wsConnected && (
                 <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
@@ -1024,7 +995,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
       </Card>
 
       {/* Latency & Throughput & Processlist Cards */}
-      {mergedMariadb && (
+      {mergedDbMonitor && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Latency Card */}
           <Card className="border-sky-500/30">
@@ -1033,35 +1004,35 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                 <Activity className="w-4 h-4 text-sky-500" />
                 <p className="text-sm font-medium">Latensi Database</p>
               </div>
-              {mariadbLatency?.dbLatencyMs != null ? (
+              {dbLatency?.dbLatencyMs != null ? (
                 <div className="space-y-2">
                   <div className="flex items-end justify-between">
                     <span className={cn(
                       "text-2xl font-bold",
-                      mariadbLatency.dbLatencyMs > 200 ? "text-red-500" : mariadbLatency.dbLatencyMs > 50 ? "text-amber-500" : "text-emerald-500"
+                      dbLatency.dbLatencyMs > 200 ? "text-red-500" : dbLatency.dbLatencyMs > 50 ? "text-amber-500" : "text-emerald-500"
                     )}>
-                      {mariadbLatency.dbLatencyMs}
+                      {dbLatency.dbLatencyMs}
                       <span className="text-xs font-normal text-muted-foreground ml-1">ms</span>
                     </span>
                     <span className={cn(
                       "text-xs font-medium px-2 py-0.5 rounded-full",
-                      mariadbLatency.dbLatencyMs > 200 ? "bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400" :
-                      mariadbLatency.dbLatencyMs > 50 ? "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400" :
+                      dbLatency.dbLatencyMs > 200 ? "bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400" :
+                      dbLatency.dbLatencyMs > 50 ? "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400" :
                       "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
                     )}>
-                      {mariadbLatency.dbLatencyMs > 200 ? "Lambat" : mariadbLatency.dbLatencyMs > 50 ? "Sedang" : "Cepat"}
+                      {dbLatency.dbLatencyMs > 200 ? "Lambat" : dbLatency.dbLatencyMs > 50 ? "Sedang" : "Cepat"}
                     </span>
                   </div>
                   <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                     <div
                       className={cn(
                         "h-full rounded-full transition-all duration-500",
-                        mariadbLatency.dbLatencyMs > 200 ? "bg-red-500" : mariadbLatency.dbLatencyMs > 50 ? "bg-amber-500" : "bg-emerald-500"
+                        dbLatency.dbLatencyMs > 200 ? "bg-red-500" : dbLatency.dbLatencyMs > 50 ? "bg-amber-500" : "bg-emerald-500"
                       )}
-                      style={{ width: `${Math.min((mariadbLatency.dbLatencyMs / 500) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((dbLatency.dbLatencyMs / 500) * 100, 100)}%` }}
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground">Round-trip ke MariaDB</p>
+                  <p className="text-[10px] text-muted-foreground">Round-trip ke PostgreSQL</p>
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">Data tidak tersedia</p>
@@ -1145,7 +1116,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                     </div>
                     <div className="text-center p-1.5 rounded bg-muted/50 border">
                       <p className="text-[10px] text-muted-foreground">Koneksi</p>
-                      <p className="text-xs font-semibold">{mariadbConnections?.current || 0}</p>
+                      <p className="text-xs font-semibold">{dbConnections?.current || 0}</p>
                     </div>
                   </div>
                   {processInfo.activeQueries && processInfo.activeQueries.length > 0 && (
@@ -1168,14 +1139,14 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
       )}
 
       {/* Cache Hit Rate Cards */}
-      {mergedMariadb && (bufferPool || keyCache || tableCache) && (
+      {mergedDbMonitor && (bufferPool || keyCache || tableCache) && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-500" />
               Cache Hit Rate
             </CardTitle>
-            <CardDescription>Efisiensi cache MariaDB (semakin tinggi semakin baik)</CardDescription>
+            <CardDescription>Efisiensi database (semakin tinggi semakin baik)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

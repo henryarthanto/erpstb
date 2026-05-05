@@ -1,22 +1,19 @@
 // =====================================================================
-// CONNECTION POOL — Stub (migrated to MariaDB/Prisma)
+// CONNECTION POOL — Stub
 //
-// The PostgreSQL connection pool (pg/PgBouncer) has been replaced by
-// Prisma's built-in connection pool. This module provides stubs for
-// backward compatibility with files that still import from here.
-//
-// Will be reimplemented with mysql2 connection pool if needed.
+// Prisma's built-in connection pool handles all database operations.
+// This module provides stubs for backward compatibility.
 // =====================================================================
 
 /** Pool query — stub, always throws */
 export async function poolQuery<T = any>(_text: string, _params?: unknown[]): Promise<T[]> {
-  console.warn('[ConnectionPool:stub] poolQuery called — direct SQL queries not available in MariaDB mode');
+  console.warn('[ConnectionPool:stub] poolQuery called — direct SQL queries not available in PostgreSQL mode');
   return [];
 }
 
 /** Pool query with retry — stub */
 export async function poolQueryWithRetry<T = any>(_text: string, _params?: unknown[], _retries?: number): Promise<T[]> {
-  console.warn('[ConnectionPool:stub] poolQueryWithRetry called — direct SQL queries not available in MariaDB mode');
+  console.warn('[ConnectionPool:stub] poolQueryWithRetry called — direct SQL queries not available in PostgreSQL mode');
   return [];
 }
 
@@ -42,12 +39,12 @@ export function hasSessionPool(): boolean {
 
 /** Get transaction pool — throws */
 export async function getTransactionPool(): Promise<any> {
-  throw new Error('Transaction pool not available in MariaDB mode');
+  throw new Error('Transaction pool not available in PostgreSQL mode');
 }
 
 /** Get session pool — throws */
 export async function getSessionPool(): Promise<any> {
-  throw new Error('Session pool not available in MariaDB mode');
+  throw new Error('Session pool not available in PostgreSQL mode');
 }
 
 /** Reconnect pool — no-op */
@@ -72,7 +69,7 @@ export async function sessionQuery<T = any>(_text: string, _params?: unknown[]):
 
 /** Session transaction — stub */
 export async function sessionTransaction(_statements: { text: string; params?: unknown[] }[]): Promise<{ results: any[][]; errors: string[] }> {
-  return { results: [], errors: ['Not available in MariaDB mode'] };
+  return { results: [], errors: ['Not available in PostgreSQL mode'] };
 }
 
 /** Get pool stats — empty */
