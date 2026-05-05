@@ -145,13 +145,18 @@ export async function PATCH(request: NextRequest) {
         payment_status: updateData.payment_status,
         status: updateData.status,
       };
-      const { error: payUpdateError } = await db
+      const { count: payUpdateCount, error: payUpdateError } = await db
         .from('transactions')
         .update(paymentUpdateData)
         .eq('id', transactionId)
         .neq('payment_status', 'paid')
         .eq('paid_amount', updateData.paid_amount - data.amount); // FIX: Additional optimistic lock — prevent concurrent double-credit
       if (payUpdateError) throw payUpdateError;
+      if (payUpdateCount === 0) {
+        // Payment update was silently skipped — optimistic lock failed or race condition
+        console.error('[COURIER DELIVER] WARNING: Payment update affected 0 rows. Possible concurrent modification.', { transactionId, expectedPaidAmount: updateData.paid_amount - data.amount });
+        // Still continue — delivery is already marked, courier cash will still be credited
+      }
     }
 
     // Update linked receivable
@@ -177,7 +182,7 @@ export async function PATCH(request: NextRequest) {
           p_delta: amount,
         });
         if (!ccError) {
-          ccNewBalance = Number(newBalance) || 0;
+          ccNewBalance = Number(newBalance?.new_balance) || 0;
           ccSuccess = true;
           break;
         }

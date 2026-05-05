@@ -681,9 +681,14 @@ class PostgrestQueryBuilder {
       }
     }
 
-    // Build include options from chained .select()
+    // Build select/include options from chained .select()
     const updateOptions: Record<string, any> = {};
-    if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
+    if (this.selectFields && Object.keys(this.selectFields).length > 0) {
+      updateOptions.select = { ...this.selectFields };
+      if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
+        Object.assign(updateOptions.select, this.includeConfig);
+      }
+    } else if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
       updateOptions.include = this.includeConfig;
     }
 
@@ -692,8 +697,8 @@ class PostgrestQueryBuilder {
       (f) => f.op === 'eq' && (f.field === 'id' || f.field === 'key')
     );
 
+    // Case 1: Single filter on id/key, no select/singleMode → simple update()
     if (idFilter && this.filters.length === 1 && !this.singleMode) {
-      // Use update() for single record by id
       const result = await model.update({
         where: { [snakeToCamel(idFilter.field)]: idFilter.value },
         data: camelData,
@@ -702,7 +707,32 @@ class PostgrestQueryBuilder {
       return { data: toSnakeCaseDeep(result), error: null, count: null };
     }
 
-    // Use updateMany for multi-record updates
+    // Case 2: Multi-filter update with select/singleMode — verify existence first, then update by id
+    // This preserves the WHERE conditions as an optimistic lock while returning the updated record
+    if (idFilter && (this.singleMode || (this.selectFields && Object.keys(this.selectFields).length > 0))) {
+      // First check if a matching record exists (handles all filter conditions including optimistic locks)
+      const existing = await model.findFirst({
+        where,
+        ...(updateOptions.select ? { select: updateOptions.select } : updateOptions.include ? { include: updateOptions.include } : {}),
+      });
+      if (!existing) {
+        // No matching record — optimistic lock failed or record doesn't exist
+        if (this.singleMode === 'single') {
+          return { data: null, error: { message: 'Record not found or condition not met', code: 'PGRST116' }, count: 0 };
+        }
+        // maybeSingle: return null (not found is acceptable)
+        return { data: null, error: null, count: 0 };
+      }
+      // Record exists — perform the update by id
+      const result = await model.update({
+        where: { id: idFilter.value },
+        data: camelData,
+        ...updateOptions,
+      });
+      return { data: toSnakeCaseDeep(result), error: null, count: 1 };
+    }
+
+    // Case 3: Multi-record updateMany (no select needed)
     const result = await model.updateMany({ where, data: camelData });
     return { data: null, error: null, count: result.count };
   }
