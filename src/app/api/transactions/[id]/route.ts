@@ -46,7 +46,7 @@ export async function GET(
     }
 
     const txCamel = toCamelCase(transaction);
-    
+
     // Strip sensitive financial data for non-admin/keuangan roles
     if (authUserRole && !['super_admin', 'keuangan'].includes(authUserRole)) {
       delete txCamel.totalHpp;

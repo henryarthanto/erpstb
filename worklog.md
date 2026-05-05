@@ -375,3 +375,25 @@ Stage Summary:
 - Price input is now big, prominent, and clearly labeled — users can easily find it
 - Empty items are caught and shown as warning
 - allPricesFilled no longer passes for empty item arrays
+---
+Task ID: 2
+Agent: Main
+Task: Fix critical bug - parseSelectString in supabase.ts can't handle nested parentheses
+
+Work Log:
+- User reported "Tidak ada item dalam order ini" when opening PWA Order Approval dialog
+- Verified items exist in database (MRS 57x30, qty 1)
+- Added debug logs to API route - discovered `items: undefined` in Supabase response
+- Root cause: `parseSelectString()` in supabase.ts used regex `[^)]*` which CANNOT handle nested parentheses
+- When select string is `items:transaction_items(*, product:products(*))`, the regex `[^)]*` stops at the first `)` inside `products(*)`, causing the entire match to FAIL
+- This meant NO relation with nested selects was being included in ANY Prisma query!
+- Fixed by replacing regex-based parsing with a new `findMatchingParens()` function that uses depth-tracking to find the outermost balanced parentheses
+- The new parser correctly handles: `items:transaction_items(*, product:products(*))`, `created_by:users!created_by_id(id, name)`, etc.
+- This fix affects ALL API routes that use nested relation selects (transactions, products, etc.)
+- Also removed debug console.logs from TransactionsModule and transactions/[id] API route
+- Verified lint passes
+
+Stage Summary:
+- CRITICAL BUG FIXED: parseSelectString now handles nested parentheses properly
+- ALL PostgREST-style selects with nested relations (e.g., items with embedded products) now work correctly
+- PWA Order Approval dialog will now show items (MRS 57x30) with the price input

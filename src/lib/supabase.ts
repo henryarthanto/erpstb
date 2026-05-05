@@ -218,41 +218,46 @@ function parseSelectString(selectStr: string): {
   for (const part of parts) {
     const trimmed = part.trim();
 
-    // Check for embedded relation: 'alias:table_name!fkey_hint(fields)' or 'alias:table_name(fields)'
-    const embedMatch = trimmed.match(/^(\w+):(\w+)(?:![\w.]+)?\(([^)]*)\)$/);
-    if (embedMatch) {
-      const alias = embedMatch[1];
-      const tableName = embedMatch[2];
-      const nestedFields = embedMatch[3];
-
-      const modelName = TABLE_TO_MODEL[tableName];
-      if (modelName) {
-        const nestedParse = parseSelectString(nestedFields || '*');
-        const nestedInclude: Record<string, any> = {};
-        if (nestedParse.selectFields) {
-          nestedInclude.select = nestedParse.selectFields;
+    // Check for embedded relation: 'alias:table_name!fkey(fields)' or 'alias:table_name(fields)'
+    // CRITICAL FIX: Handle nested parentheses like 'items:transaction_items(*, product:products(*))'
+    // Use findMatchingParens to extract the outermost (...) content correctly.
+    const colonIdx = trimmed.indexOf(':');
+    if (colonIdx > 0) {
+      const alias = trimmed.substring(0, colonIdx);
+      const rest = trimmed.substring(colonIdx + 1);
+      const parenResult = findMatchingParens(rest);
+      if (parenResult) {
+        const tablePart = parenResult.before.replace(/![\w.]+$/, '').trim();
+        const nestedFields = parenResult.inside.trim();
+        const modelName = TABLE_TO_MODEL[tablePart];
+        if (modelName && /^[\w]+$/.test(alias)) {
+          const nestedParse = parseSelectString(nestedFields || '*');
+          const nestedInclude: Record<string, any> = {};
+          if (nestedParse.selectFields) {
+            nestedInclude.select = nestedParse.selectFields;
+          }
+          if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
+            Object.assign(nestedInclude, nestedParse.includeConfig);
+          }
+          const includeKey = snakeToCamel(alias);
+          if (Object.keys(nestedInclude).length === 0) {
+            includeConfig[includeKey] = true;
+          } else {
+            includeConfig[includeKey] = nestedInclude;
+          }
         }
-        if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
-          Object.assign(nestedInclude, nestedParse.includeConfig);
-        }
-        // Use alias (camelCase) as include key so Prisma matches the relation name
-        const includeKey = snakeToCamel(alias);
-        if (Object.keys(nestedInclude).length === 0) {
-          includeConfig[includeKey] = true;
-        } else {
-          includeConfig[includeKey] = nestedInclude;
-        }
+        continue;
       }
-      continue;
     }
 
-    // Check for direct relation: 'table_name!fkey_hint(fields)' or 'table_name(fields)'
-    const directEmbedMatch = trimmed.match(/^(\w+)(?:![\w.]+)?\(([^)]*)\)$/);
-    if (directEmbedMatch) {
-      const tableName = directEmbedMatch[1];
-      const nestedFields = directEmbedMatch[2];
-      const modelName = TABLE_TO_MODEL[tableName];
-      if (modelName) {
+    // Check for direct relation: 'table_name!fkey(fields)' or 'table_name(fields)'
+    // CRITICAL FIX: Also handle nested parentheses properly.
+    const parenResult = findMatchingParens(trimmed);
+    if (parenResult) {
+      const tablePart = parenResult.before.replace(/![\w.]+$/, '').trim();
+      const nestedFields = parenResult.inside.trim();
+      const modelName = TABLE_TO_MODEL[tablePart];
+      if (modelName && /^[\w]+$/.test(tablePart)) {
         if (nestedFields.trim() === '*') {
           includeConfig[modelName] = true;
         } else {
@@ -264,7 +269,7 @@ function parseSelectString(selectStr: string): {
           if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
             Object.assign(nestedInclude, nestedParse.includeConfig);
           }
-          includeConfig[modelName] = Object.keys(nestedInclude).length > 0 ? nestedInclude : true;
+          includeConfig[modelName] = Object.keys(nestedInclude).length === 0 ? nestedInclude : true;
         }
       }
       continue;
@@ -277,6 +282,32 @@ function parseSelectString(selectStr: string): {
   }
 
   return { selectFields, includeConfig };
+}
+
+/**
+ * Find the outermost balanced parentheses in a string.
+ * e.g. 'transaction_items(*, product:products(*))' returns { before: 'transaction_items', inside: '*, product:products(*)' }
+ * Returns null if no valid outermost parens found.
+ */
+function findMatchingParens(str: string): { before: string; inside: string } | null {
+  const openIdx = str.indexOf('(');
+  if (openIdx === -1) return null;
+
+  let depth = 0;
+  for (let i = openIdx; i < str.length; i++) {
+    if (str[i] === '(') depth++;
+    else if (str[i] === ')') {
+      depth--;
+      if (depth === 0) {
+        // Found matching close paren at position i
+        return {
+          before: str.substring(0, openIdx),
+          inside: str.substring(openIdx + 1, i),
+        };
+      }
+    }
+  }
+  return null;
 }
 
 /** Split select string by commas, respecting parentheses nesting */

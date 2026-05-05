@@ -65,7 +65,8 @@ function PWAOrderApprovalDialog({
     queryKey: ['pwa-tx-detail', transaction.id],
     queryFn: async () => {
       const res = await apiFetch<any>(`/api/transactions/${transaction.id}`);
-      return res.transaction || res;
+      const tx = res.transaction || res;
+      return tx;
     },
     enabled: open && !!transaction.id,
     staleTime: 0,
