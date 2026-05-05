@@ -125,29 +125,11 @@ const TABLE_TO_QUERY_KEYS: Record<string, string[][]> = {
     ['finance-pools'],
     ['dashboard'],
   ],
-  deliveries: [
-    ['deliveries'], ['transactions'], ['dashboard'], ['courier-dashboard'], ['receivables'],
-  ],
-  stock_movements: [
-    ['stock-movements'], ['products'], ['dashboard'], ['asset-value'],
-  ],
-  suppliers: [
-    ['suppliers'], ['dashboard'],
-  ],
-  cashbacks: [
-    ['cashbacks'], ['dashboard'], ['customers'],
-  ],
-  user_units: [
-    ['users'],
-  ],
-  units: [
-    ['units'], ['products'],
-  ],
   cashback_withdrawal: [
-    ['dashboard'], ['cashbacks'],
+    ['dashboard'],
   ],
   cashback_log: [
-    ['dashboard'], ['cashbacks'],
+    ['dashboard'],
   ],
   settings: [], // Don't invalidate anything for settings changes
 };

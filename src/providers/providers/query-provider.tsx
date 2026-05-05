@@ -29,40 +29,7 @@ export const MODULE_POLLING: Record<string, number> = {
   events: 30_000,
   // Dashboard: 300s — realtime sync handles most updates
   dashboard: 300_000,
-  // Transactions: 60s
-  transactions: 60_000,
-  // Products: 60s
-  products: 60_000,
-  // Payments: 60s
-  payments: 60_000,
-  // Deliveries: 45s
-  deliveries: 45_000,
-  // Salaries: 60s
-  salaries: 60_000,
-  // Sales tasks: 45s
-  sales_tasks: 45_000,
-  // Stock movements: 60s
-  stock_movements: 60_000,
-  // Suppliers: 120s
-  suppliers: 120_000,
-  // Customers: 60s
-  customers: 60_000,
-  // Cashbacks: 60s
-  cashbacks: 60_000,
-  // Finance: 45s
-  finance: 45_000,
-  // Users: 120s
-  users: 120_000,
-  // Reports: 120s
-  reports: 120_000,
-  // Courier: 45s
-  courier: 45_000,
-  // Receivables: 60s
-  receivables: 60_000,
-  // Cash boxes: 45s
-  cash_boxes: 45_000,
-  // PWA orders: 30s
-  pwa_orders: 30_000,
+  // Everything else: no polling (on demand via WS invalidation)
 };
 
 // Stale times for different query keys — used by useSharedData and other hooks

@@ -1069,17 +1069,9 @@ export default function ProductsModule() {
                         <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
                           {isTracking ? displayStockStr : 'Nonaktif'}
                         </Badge>
-                        {/* Stock management buttons for admin/kasir roles */}
-                        {isTracking && p.hasAccess !== false && user?.role !== 'kurir' && user?.role !== 'sales' && user?.role !== 'viewer' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                            onClick={() => setShowStock(p)}
-                            title="Kelola Stok"
-                          >
+                        {isTracking && p.hasAccess !== false && user?.role !== 'kurir' && user?.role !== 'sales' && user?.role !== 'viewer' && user?.role !== 'super_admin' && (
+                          <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]" onClick={() => setShowStock(p)}>
                             <Package className="w-3 h-3" />
-                            Stok
                           </Button>
                         )}
                         {user?.role === 'super_admin' && (
@@ -1094,10 +1086,12 @@ export default function ProductsModule() {
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit Produk
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setShowStock(p)}>
-                                <Package className="w-4 h-4 mr-2" />
-                                Kelola Stok
-                              </DropdownMenuItem>
+                              {isTracking && (
+                                <DropdownMenuItem onClick={() => setShowStock(p)}>
+                                  <Package className="w-4 h-4 mr-2" />
+                                  Kelola Stok
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem 
                                 className="text-red-600"
@@ -1137,7 +1131,7 @@ export default function ProductsModule() {
                     </div>
                   )}
                   
-                  {(user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'kasir') && isTracking && (
+                  {(user?.role === 'super_admin' || user?.role === 'keuangan') && isTracking && (
                   <div className="flex justify-between text-sm min-w-0 overflow-hidden">
                     <span className="text-muted-foreground shrink-0">HPP / {p.unit || 'pcs'}:</span>
                     <span className="min-w-0 truncate text-right">{formatCurrency((p.avgHpp || 0) * (p.conversionRate || 1))}</span>

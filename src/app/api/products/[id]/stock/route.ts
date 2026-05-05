@@ -25,8 +25,8 @@ export async function POST(
     if (!authUser || !authUser.is_active || authUser.status !== 'approved') {
       return NextResponse.json({ error: 'Akses ditolak' }, { status: 403 });
     }
-    if (!['super_admin', 'admin', 'kasir', 'keuangan', 'gudang'].includes(authUser.role)) {
-      return NextResponse.json({ error: 'Hanya Super Admin, Admin, Kasir, Keuangan, atau Gudang yang dapat mengubah stok' }, { status: 403 });
+    if (!['super_admin', 'keuangan', 'gudang'].includes(authUser.role)) {
+      return NextResponse.json({ error: 'Hanya Super Admin, Keuangan, atau Gudang yang dapat mengubah stok' }, { status: 403 });
     }
 
     const { id } = await params;

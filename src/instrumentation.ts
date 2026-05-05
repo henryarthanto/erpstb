@@ -6,14 +6,13 @@
 //   2. Realtime Sync — Socket.io client → monitor-ws (port 3004)
 //
 // Both features are enabled on startup and auto-reconnect.
-// NOTE: These features require Node.js runtime. In Edge Runtime,
-// they are gracefully skipped.
+// NOTE: Graceful shutdown handlers require Node.js runtime.
 // =====================================================================
 
 export async function register() {
   if (typeof window !== 'undefined') return;
 
-  console.log('[Instrumentation] Server starting...');
+  console.log('[Instrumentation] Server starting (Supabase PostgreSQL/Prisma mode)...');
 
   // ─── 1. Fast Query Pool ──────────────────────────────────────────
   try {
@@ -21,7 +20,7 @@ export async function register() {
     const ready = await initFastPool();
     console.log(`[Instrumentation] Fast query pool: ${ready ? 'active ✓' : 'failed ✗'}`);
   } catch (e) {
-    console.warn(`[Instrumentation] Fast query pool: skipped (${(e as Error).message})`);
+    console.warn(`[Instrumentation] Fast query pool: failed (${(e as Error).message})`);
   }
 
   // ─── 2. Realtime Sync ────────────────────────────────────────────
@@ -30,6 +29,23 @@ export async function register() {
     startRealtimeSync();
     console.log('[Instrumentation] Realtime sync: starting...');
   } catch (e) {
-    console.warn(`[Instrumentation] Realtime sync: skipped (${(e as Error).message})`);
+    console.warn(`[Instrumentation] Realtime sync: failed (${(e as Error).message})`);
   }
+
+  // ─── 3. Graceful Shutdown (Node.js only) ─────────────────────────
+  try {
+    const process = globalThis.process;
+    if (process && typeof process.on === 'function') {
+      process.on('SIGTERM', async () => {
+        console.log('[Instrumentation] SIGTERM — shutting down...');
+        try { const { closeFastPool } = await import('@/lib/fast-query'); await closeFastPool(); } catch {}
+        try { const { stopRealtimeSync } = await import('@/lib/realtime-sync'); stopRealtimeSync(); } catch {}
+      });
+      process.on('SIGINT', async () => {
+        console.log('[Instrumentation] SIGINT — shutting down...');
+        try { const { closeFastPool } = await import('@/lib/fast-query'); await closeFastPool(); } catch {}
+        try { const { stopRealtimeSync } = await import('@/lib/realtime-sync'); stopRealtimeSync(); } catch {}
+      });
+    }
+  } catch {}
 }
