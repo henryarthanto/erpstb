@@ -27,6 +27,8 @@ export const viewport: Viewport = {
   ...(isSTB ? { interactiveWidget: "resizes-content" as const } : {}),
 };
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: "Razkindo ERP - Enterprise Resource Planning",
   description: "Sistem ERP komprehensif untuk manajemen bisnis multi-unit dengan fitur lengkap: transaksi, inventori, keuangan, dan analitik.",
