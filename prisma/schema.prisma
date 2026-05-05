@@ -2,7 +2,7 @@
 
 generator client {
   provider        = "prisma-client-js"
-  binaryTargets   = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-x86_64-openssl-3.0.x"]
+  binaryTargets   = ["native", "linux-musl-arm64-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -1038,7 +1038,7 @@ model Event {
 model Setting {
   id        String   @id @default(cuid())
   key       String   @unique
-  value     String   @db.LongText // JSON (can store large base64 data like logos)
+  value     String   @db.Text // JSON (can store large base64 data like logos)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   
