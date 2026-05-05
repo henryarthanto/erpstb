@@ -1354,7 +1354,7 @@ export default function CustomerPWAPage({
                             )}
 
                             {/* ── Compact Header (always visible) ── */}
-                            <CollapsibleTrigger className="w-full text-left">
+                            <CollapsibleTrigger className="w-full text-left" asChild>
                               <div className="p-3 space-y-2">
                                 {/* Row 1: Invoice + Status badges */}
                                 <div className="flex items-start justify-between gap-2">
