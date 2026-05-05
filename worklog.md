@@ -343,3 +343,35 @@ Stage Summary:
 - Desktop: item summary row below the order + orange button in Actions column
 - Mobile: orange item badges + orange "Set Harga & Approve" button
 - Files modified: src/components/erp/TransactionsModule.tsx
+---
+Task ID: 1
+Agent: Main
+Task: Fix PWA Order Approval Dialog - items not showing, price input not findable, product name missing
+
+Work Log:
+- Investigated the PWAOrderApprovalDialog in TransactionsModule.tsx
+- Found 3 root issues:
+  1. Items might be empty because the dialog relied on cached transaction list data (items might not be included in cached response)
+  2. Price input was too subtle (w-32 h-8 small input) — users couldn't find where to type the price
+  3. `allPricesFilled` returned true for empty array ([].every() returns true), allowing approve with no prices
+- Fixed by:
+  1. Added fresh transaction detail fetch when dialog opens (useQuery with staleTime:0 fetching /api/transactions/{id})
+  2. Completely redesigned the items section UI:
+     - Big, prominent price input (w-full h-11 with Rp prefix, border-2, font-bold)
+     - Clear label "💰 Harga Jual / Unit" above each input
+     - Product name shown in bold with qty and selling price reference
+     - Subtotal displayed with emerald color when > 0
+     - Each item in its own bordered card
+  3. Fixed allPricesFilled to require items.length > 0
+  4. Added loading state while fetching fresh transaction data
+  5. Added empty items warning message
+  6. Updated info banner text to explicitly say "Isi harga jual per item di kolom Harga Jual / Unit"
+  7. Fixed all transaction references in dialog to use activeTx (fresh data) instead of original transaction prop
+- Fixed JSX comment syntax error (missing closing })
+- Verified with lint — no new errors
+
+Stage Summary:
+- PWAOrderApprovalDialog now fetches transaction fresh when opened (ensures items always loaded)
+- Price input is now big, prominent, and clearly labeled — users can easily find it
+- Empty items are caught and shown as warning
+- allPricesFilled no longer passes for empty item arrays

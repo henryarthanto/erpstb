@@ -59,10 +59,24 @@ function PWAOrderApprovalDialog({
   const [selectedCourierId, setSelectedCourierId] = useState<string>('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>(transaction.paymentMethod || 'cash');
 
-  const items = transaction.items || [];
+  // IMPORTANT: Fetch the transaction FRESH when dialog opens to ensure items are loaded
+  // The list API might not have items due to caching or sparse select
+  const { data: freshTx, isLoading: isLoadingFresh } = useQuery({
+    queryKey: ['pwa-tx-detail', transaction.id],
+    queryFn: async () => {
+      const res = await apiFetch<any>(`/api/transactions/${transaction.id}`);
+      return res.transaction || res;
+    },
+    enabled: open && !!transaction.id,
+    staleTime: 0,
+  });
+
+  // Use fresh data if available, otherwise fall back to passed-in transaction
+  const activeTx = freshTx || transaction;
+  const items = activeTx.items || [];
 
   // Filter couriers by same unit as the transaction (check primary unit + userUnits junction)
-  const txUnitId = transaction.unitId;
+  const txUnitId = activeTx.unitId;
   const unitCouriers = couriers.filter((c: any) =>
     c.unitId === txUnitId ||
     c.unit?.id === txUnitId ||
@@ -71,13 +85,13 @@ function PWAOrderApprovalDialog({
 
   // Fetch deal prices for this customer
   const { data: dealPricesData } = useQuery({
-    queryKey: ['customer-deal-prices', transaction.customerId],
+    queryKey: ['customer-deal-prices', activeTx.customerId],
     queryFn: async () => {
-      if (!transaction.customerId) return { prices: [] };
-      const res = await apiFetch<any>(`/api/customer-prices?customerId=${transaction.customerId}`);
+      if (!activeTx.customerId) return { prices: [] };
+      const res = await apiFetch<any>(`/api/customer-prices?customerId=${activeTx.customerId}`);
       return res;
     },
-    enabled: open && !!transaction.customerId,
+    enabled: open && !!activeTx.customerId,
     staleTime: 60_000,
   });
   const dealPrices = React.useMemo(() => {
@@ -134,7 +148,7 @@ function PWAOrderApprovalDialog({
       return apiFetch('/api/pwa-orders/approve', {
         method: 'POST',
         body: JSON.stringify({
-          transactionId: transaction.id,
+          transactionId: activeTx.id,
           items: itemsWithPrice,
           deliveryType,
           courierId: deliveryType === 'courier' ? selectedCourierId : undefined,
@@ -163,7 +177,7 @@ function PWAOrderApprovalDialog({
     mutationFn: async () => {
       return apiFetch('/api/pwa-orders/approve', {
         method: 'POST',
-        body: JSON.stringify({ transactionId: transaction.id, reject: true, rejectReason }),
+        body: JSON.stringify({ transactionId: activeTx.id, reject: true, rejectReason }),
       });
     },
     onSuccess: () => {
@@ -182,12 +196,13 @@ function PWAOrderApprovalDialog({
     return sum + (parseFloat(prices[item.id]) || 0) * item.qty;
   }, 0);
 
-  const allPricesFilled = items.every((item: any) => parseFloat(prices[item.id]) > 0);
+  // IMPORTANT: must have at least 1 item AND all prices > 0 to approve
+  const allPricesFilled = items.length > 0 && items.every((item: any) => parseFloat(prices[item.id]) > 0);
   const canApprove = allPricesFilled && (deliveryType !== 'courier' || !!selectedCourierId);
 
   // Get selected courier info for commission preview
   const selectedCourier = couriers.find((c: any) => c.id === selectedCourierId);
-  const customerDistance = transaction.customer?.distance || 'near';
+  const customerDistance = activeTx.customer?.distance || 'near';
   const previewCommission = selectedCourier
     ? (customerDistance === 'far' ? (selectedCourier.farCommission || 0) : (selectedCourier.nearCommission || 0))
     : 0;
@@ -216,7 +231,7 @@ function PWAOrderApprovalDialog({
               Set Harga Order PWA
             </DialogTitle>
             <DialogDescription>
-              {transaction.invoiceNo} — {transaction.customer?.name || '-'}
+              {activeTx.invoiceNo} — {activeTx.customer?.name || '-'}
             </DialogDescription>
           </DialogHeader>
 
@@ -227,7 +242,7 @@ function PWAOrderApprovalDialog({
                 <Smartphone className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
                 <div className="text-xs text-orange-700 dark:text-orange-300">
                   <p className="font-medium">Order dari pelanggan via PWA</p>
-                  <p className="mt-1">Tentukan harga per item lalu klik &quot;Set Harga &amp; Approve&quot;. Order akan masuk piutang.</p>
+                  <p className="mt-1">Isi harga jual per item di kolom <strong>&quot;Harga Jual / Unit&quot;</strong>, lalu klik <strong>&quot;Set Harga &amp; Approve&quot;</strong>.</p>
                 </div>
               </div>
             </div>
@@ -236,7 +251,7 @@ function PWAOrderApprovalDialog({
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <span className="text-muted-foreground text-xs">Pelanggan</span>
-                <p className="font-medium">{transaction.customer?.name || '-'}</p>
+                <p className="font-medium">{activeTx.customer?.name || '-'}</p>
               </div>
               <div>
                 <span className="text-muted-foreground text-xs">Metode Bayar</span>
@@ -244,71 +259,109 @@ function PWAOrderApprovalDialog({
               </div>
               <div>
                 <span className="text-muted-foreground text-xs">Tanggal</span>
-                <p className="font-medium">{formatDateTime(transaction.createdAt)}</p>
+                <p className="font-medium">{formatDateTime(activeTx.createdAt)}</p>
               </div>
               <div>
                 <span className="text-muted-foreground text-xs">Catatan</span>
-                <p className="font-medium text-xs truncate">{transaction.notes?.replace(/Order dari PWA.*?—\s*/g, '').trim() || '-'}</p>
+                <p className="font-medium text-xs truncate">{activeTx.notes?.replace(/Order dari PWA.*?—\s*/g, '').trim() || '-'}</p>
               </div>
             </div>
 
             <Separator />
 
-            {/* Items with price inputs */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <Banknote className="w-4 h-4" />
-                Set Harga Per Item
-              </Label>
-              <div className="space-y-2">
-                {items.map((item: any) => {
-                  const product = item.product || allProducts.find((p: any) => p.id === item.productId);
-                  const priceVal = parseFloat(prices[item.id]) || 0;
-                  const subtotal = priceVal * item.qty;
-                  const unitLabel = product?.unit || 'pcs';
-                  const hasDealPrice = dealPrices[item.productId] && dealPrices[item.productId] > 0;
-
-                  return (
-                    <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium truncate">{item.productName}</p>
-                          {hasDealPrice && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">
-                              <Tag className="w-2.5 h-2.5" />
-                              Deal {formatCurrency(dealPrices[item.productId])}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {item.qty} {unitLabel}
-                          {showHpp && product?.avgHpp > 0 && (
-                            <span className="ml-2 text-orange-600">HPP: {formatCurrency(product.avgHpp)}/{product.subUnit || 'unit'}</span>
-                          )}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground hidden sm:inline">Rp</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1000"
-                          value={prices[item.id] || ''}
-                          onChange={(e) => handlePriceChange(item.id, e.target.value)}
-                          className="w-32 h-8 text-sm text-right"
-                          placeholder={hasDealPrice ? formatCurrency(dealPrices[item.productId]) : '0'}
-                        />
-                      </div>
-                      <div className="w-28 text-right">
-                        <p className={cn("text-sm font-semibold", subtotal > 0 ? "text-foreground" : "text-muted-foreground")}>
-                          {formatCurrency(subtotal)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Loading state */}
+            {isLoadingFresh && (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mr-2" />
+                <span className="text-sm text-muted-foreground">Memuat data order...</span>
               </div>
-            </div>
+            )}
+
+            {/* Items with price inputs */}
+            {!isLoadingFresh && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Banknote className="w-4 h-4" />
+                  Isi Harga Jual Per Item
+                </Label>
+
+                {items.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4">
+                    <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">Tidak ada item dalam order ini</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">Item pesanan mungkin belum tersimpan. Coba tutup dan buka kembali, atau hubungi admin.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {items.map((item: any) => {
+                      const product = item.product || allProducts.find((p: any) => p.id === item.productId);
+                      const priceVal = parseFloat(prices[item.id]) || 0;
+                      const subtotal = priceVal * item.qty;
+                      const unitLabel = product?.unit || 'pcs';
+                      const hasDealPrice = dealPrices[item.productId] && dealPrices[item.productId] > 0;
+                      const productSellingPrice = product?.sellingPrice || item.product?.sellingPrice || 0;
+
+                      return (
+                        <div key={item.id} className="rounded-lg border bg-card p-4 space-y-3">
+                          {/* Product name row */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-bold truncate">{item.productName || product?.name || 'Produk tidak dikenal'}</p>
+                                {hasDealPrice && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5">
+                                    <Tag className="w-2.5 h-2.5" />
+                                    Deal {formatCurrency(dealPrices[item.productId])}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Qty: <span className="font-semibold">{item.qty}</span> {unitLabel}
+                                {showHpp && product?.avgHpp > 0 && (
+                                  <span className="ml-2 text-orange-600">HPP: {formatCurrency(product.avgHpp)}/{product.subUnit || 'unit'}</span>
+                                )}
+                                {productSellingPrice > 0 && (
+                                  <span className="ml-2 text-blue-600">Harga jual: {formatCurrency(productSellingPrice)}</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Price input row — BIG and obvious */}
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <Label className="text-xs font-semibold text-foreground mb-1.5 block">
+                                💰 Harga Jual / Unit
+                              </Label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground pointer-events-none">Rp</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1000"
+                                  value={prices[item.id] || ''}
+                                  onChange={(e) => handlePriceChange(item.id, e.target.value)}
+                                  className="w-full h-11 pl-10 pr-4 text-base font-bold text-right border-2 border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                                  placeholder={hasDealPrice ? String(dealPrices[item.productId]) : productSellingPrice > 0 ? String(productSellingPrice) : 'Ketik harga...'}
+                                />
+                              </div>
+                            </div>
+                            <div className="w-32 text-right shrink-0">
+                              <Label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Subtotal</Label>
+                              <p className={cn(
+                                'text-base font-bold tabular-nums',
+                                subtotal > 0 ? 'text-emerald-600' : 'text-muted-foreground'
+                              )}>
+                                {formatCurrency(subtotal)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <Separator />
 
@@ -462,7 +515,7 @@ function PWAOrderApprovalDialog({
           <DialogHeader>
             <DialogTitle>Tolak Order PWA</DialogTitle>
             <DialogDescription>
-              {transaction.invoiceNo} — {transaction.customer?.name}
+              {activeTx.invoiceNo} — {activeTx.customer?.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
