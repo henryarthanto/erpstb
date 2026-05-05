@@ -1,0 +1,43 @@
+# ============================================================
+# Razkindo ERP STB - Docker Compose
+# Usage: docker-compose up -d
+# ============================================================
+
+services:
+  erp:
+    image: ghcr.io/henryarthanto/erpstb:latest
+    container_name: razkindo-erp
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+    volumes:
+      # Persist Prisma engine if needed
+      - prisma-data:/app/prisma
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - erp-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+volumes:
+  prisma-data:
+    driver: local
+
+networks:
+  erp-network:
+    driver: bridge

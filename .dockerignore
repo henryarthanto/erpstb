@@ -4,7 +4,8 @@ node_modules
 .gitignore
 .github
 *.md
-.env*.local
+.env.local
+.env.*.local
 .vercel
 docker-compose*
 Dockerfile
@@ -15,3 +16,8 @@ prompt
 *.log
 claude
 .z-ai-config
+db/*.db
+upload/
+deploy/
+examples/
+mini-services/

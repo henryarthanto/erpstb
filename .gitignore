@@ -30,25 +30,39 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files (we commit .env for STB deployment)
+.env.local
+.env.*.local
 
 # vercel
 .vercel
-
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 local-*
-.claude
-.z-ai-config
+
+# Logs
 *.log
 dev.log
 dev.out.log
+server.log
+
+# Project-specific
+.claude
+.z-ai-config
 test
 prompt
-
-server.log
-# Skills directory
 /skills/
+
+# Local database (use Supabase remote DB in production)
+db/*.db
+
+# Upload temp files
+upload/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,17 +1,33 @@
-name: Build & Push to GHCR
+# ============================================================
+# Razkindo ERP STB - CI/CD Pipeline
+# Builds multi-arch Docker image → pushes to GHCR → auto-deploy to STB
+# ============================================================
+
+name: CI/CD - Build & Deploy to STB
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      deploy_tag:
+        description: 'Tag to deploy (e.g., v1.2.0)'
+        required: false
+        default: ''
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  # ==========================================
+  # Job 1: Build & Push Docker Image to GHCR
+  # ==========================================
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,6 +36,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -39,15 +60,97 @@ jobs:
           tags: |
             type=sha,prefix=
             type=ref,event=branch
-            type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ==========================================
+  # Job 2: Deploy to STB via SSH
+  # ==========================================
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Deploy to STB via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STB_HOST }}
+          username: ${{ secrets.STB_USER }}
+          key: ${{ secrets.STB_SSH_KEY }}
+          port: ${{ secrets.STB_PORT || 22 }}
+          script: |
+            echo "🚀 Deploying Razkindo ERP to STB..."
+            
+            # Navigate to project directory
+            cd /opt/erpstb || mkdir -p /opt/erpstb && cd /opt/erpstb
+            
+            # Download latest docker-compose if not present
+            if [ ! -f docker-compose.yml ]; then
+              curl -sL https://raw.githubusercontent.com/henryarthanto/erpstb/main/docker-compose.yml -o docker-compose.yml
+            fi
+            
+            # Login to GHCR
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull latest image
+            docker pull ghcr.io/henryarthanto/erpstb:latest
+            
+            # Stop existing container
+            docker-compose down 2>/dev/null || true
+            
+            # Start new container
+            docker-compose up -d
+            
+            # Cleanup old images
+            docker image prune -f
+            
+            # Health check
+            echo "⏳ Waiting for health check..."
+            sleep 10
+            for i in $(seq 1 12); do
+              if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+                echo "✅ ERP is healthy and running!"
+                exit 0
+              fi
+              echo "  Waiting... ($i/12)"
+              sleep 5
+            done
+            
+            echo "⚠️ Health check timeout, but container is running"
+            docker logs razkindo-erp --tail 20
+            
+  # ==========================================
+  # Job 3: Notify Deployment Status
+  # ==========================================
+  notify:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Deployment Status
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ Deployment to STB successful!"
+            echo "Image: ghcr.io/henryarthanto/erpstb:latest"
+            echo "Commit: ${{ github.sha }}"
+          elif [ "${{ needs.deploy.result }}" == "failure" ]; then
+            echo "❌ Deployment failed!"
+            exit 1
+          else
+            echo "⏭️ Deployment skipped (build may have failed)"
+          fi
