@@ -11,7 +11,6 @@
 import { registerAllProcessors, schedulePeriodicJobs } from './processors';
 import { getQueueStatus } from './job-queue';
 import { logInfo, logError } from './logger';
-import { getCacheStatus } from './redis-cache';
 
 async function main() {
   console.log('====================================================');
@@ -38,11 +37,9 @@ async function main() {
 
   // 3. Log status
   const queueStatus = getQueueStatus();
-  const cacheStatus = getCacheStatus();
   logInfo('Worker initialized', {
     queue: queueStatus,
-    cache: cacheStatus,
-    redis: cacheStatus.redis ? 'connected' : 'in-memory fallback',
+    cache: 'in-memory LRU (Supabase mode)',
   });
 
   // 4. Keep alive with periodic health check

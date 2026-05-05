@@ -1,13 +1,8 @@
-import Redis from 'ioredis';
 import { IS_STB, QUERY_CACHE } from './stb-config';
 
-const REDIS_URL = process.env.REDIS_URL || '';
-
-let redis: Redis | null = null;
-let redisAvailable = false;
-
 // ─────────────────────────────────────────────────────────────────────
-// IN-MEMORY FALLBACK CACHE — LRU with max entries & memory budget
+// IN-MEMORY LRU CACHE (Primary cache for Supabase/PostgreSQL setup)
+// Redis is optional — only used if REDIS_URL is configured
 // ─────────────────────────────────────────────────────────────────────
 
 interface MemCacheEntry {
@@ -42,7 +37,6 @@ function memCacheEvict(): void {
 
   // 2. LRU eviction if over max entries
   while (memCache.size > QUERY_CACHE.maxEntries) {
-    // Find oldest accessed entry
     let oldestKey = '';
     let oldestAccess = Infinity;
     for (const [key, entry] of memCache) {
@@ -83,51 +77,6 @@ const _memCacheTimer = setInterval(() => {
 if (_memCacheTimer.unref) _memCacheTimer.unref();
 
 // ─────────────────────────────────────────────────────────────────────
-// REDIS INITIALIZATION
-// ─────────────────────────────────────────────────────────────────────
-
-async function initRedis() {
-  if (!REDIS_URL) return;
-  try {
-    redis = new Redis(REDIS_URL, {
-      maxRetriesPerRequest: 3,
-      ...({
-        retryDelayOnFailover: 100,
-        retryDelayOnClusterDown: 300,
-      } as any),
-      enableReadyCheck: true,
-      lazyConnect: true,
-      connectTimeout: 5000,
-      // STB: lower memory, force IPv4
-      ...(IS_STB ? { family: 4 } : {}),
-    });
-
-    redis.on('error', (err) => {
-      console.error('[Redis] Connection error:', err.message);
-      redisAvailable = false;
-    });
-
-    redis.on('ready', () => {
-      console.log('[Redis] Connected');
-      redisAvailable = true;
-    });
-
-    redis.on('close', () => {
-      redisAvailable = false;
-    });
-
-    await redis.connect();
-  } catch (err) {
-    console.warn('[Redis] Unavailable, using in-memory cache fallback');
-    redis = null;
-    redisAvailable = false;
-  }
-}
-
-// Initialize on import (non-blocking)
-initRedis().catch(() => {});
-
-// ─────────────────────────────────────────────────────────────────────
 // PUBLIC API
 // ─────────────────────────────────────────────────────────────────────
 
@@ -141,25 +90,11 @@ export function getDefaultTtl(): number {
 }
 
 /**
- * Get a value from cache (Redis or in-memory fallback)
+ * Get a value from in-memory cache
  */
 export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
-  try {
-    if (redisAvailable && redis) {
-      const raw = await redis.get(key);
-      if (raw) {
-        return JSON.parse(raw) as T;
-      }
-      return null;
-    }
-  } catch {
-    redisAvailable = false;
-  }
-
-  // In-memory fallback
   const entry = memCache.get(key);
   if (entry && Date.now() < entry.expiry) {
-    // Update last access for LRU
     entry.lastAccess = Date.now();
     return JSON.parse(entry.value) as T;
   }
@@ -171,22 +106,11 @@ export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
 }
 
 /**
- * Set a value in cache (Redis or in-memory fallback)
+ * Set a value in in-memory cache
  */
 export async function cacheSet(key: string, value: unknown, options?: CacheOptions): Promise<void> {
   const ttlMs = options?.ttlMs ?? getDefaultTtl();
   const raw = JSON.stringify(value);
-
-  try {
-    if (redisAvailable && redis) {
-      await redis.setex(key, Math.ceil(ttlMs / 1000), raw);
-      return;
-    }
-  } catch {
-    redisAvailable = false;
-  }
-
-  // In-memory fallback with LRU eviction
   const sizeBytes = Buffer.byteLength(raw, 'utf-8');
 
   // Remove existing entry if present (to update size tracking)
@@ -213,14 +137,6 @@ export async function cacheSet(key: string, value: unknown, options?: CacheOptio
 export async function cacheDel(key: string | string[]): Promise<void> {
   const keys = Array.isArray(key) ? key : [key];
 
-  try {
-    if (redisAvailable && redis) {
-      await redis.del(...keys);
-    }
-  } catch {
-    redisAvailable = false;
-  }
-
   for (const k of keys) {
     const entry = memCache.get(k);
     if (entry) {
@@ -231,35 +147,11 @@ export async function cacheDel(key: string | string[]): Promise<void> {
 }
 
 /**
- * Get multiple values by pattern (Redis SCAN or in-memory filter)
+ * Get multiple values by pattern (in-memory prefix match)
  */
 export async function cacheGetByPattern(pattern: string): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {};
 
-  try {
-    if (redisAvailable && redis) {
-      const stream = redis.scanStream({ match: pattern, count: 100 });
-      const keys: string[] = [];
-
-      await new Promise<void>((resolve, reject) => {
-        stream.on('data', (foundKeys: string[]) => keys.push(...foundKeys));
-        stream.on('end', resolve);
-        stream.on('error', reject);
-      });
-
-      if (keys.length > 0) {
-        const values = await redis.mget(...keys);
-        for (let i = 0; i < keys.length; i++) {
-          if (values[i]) result[keys[i]] = JSON.parse(values[i]!);
-        }
-      }
-      return result;
-    }
-  } catch {
-    redisAvailable = false;
-  }
-
-  // In-memory fallback — simple prefix match
   for (const [k, entry] of memCache) {
     if (Date.now() < entry.expiry) {
       const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
@@ -271,10 +163,9 @@ export async function cacheGetByPattern(pattern: string): Promise<Record<string,
 }
 
 /**
- * Check Redis health status
+ * Check cache health status
  */
 export function getCacheStatus(): {
-  redis: boolean;
   memEntries: number;
   memBytes: number;
   memBytesMB: number;
@@ -282,7 +173,6 @@ export function getCacheStatus(): {
   maxMemoryMB: number;
 } {
   return {
-    redis: redisAvailable,
     memEntries: memCache.size,
     memBytes: memCacheBytes,
     memBytesMB: Math.round((memCacheBytes / 1024 / 1024) * 100) / 100,
@@ -297,27 +187,6 @@ export function getCacheStatus(): {
 export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
   let count = 0;
 
-  try {
-    if (redisAvailable && redis) {
-      const stream = redis.scanStream({ match: `${prefix}*`, count: 100 });
-      const keys: string[] = [];
-
-      await new Promise<void>((resolve, reject) => {
-        stream.on('data', (foundKeys: string[]) => keys.push(...foundKeys));
-        stream.on('end', resolve);
-        stream.on('error', reject);
-      });
-
-      if (keys.length > 0) {
-        count = keys.length;
-        await redis.del(...keys);
-      }
-    }
-  } catch {
-    redisAvailable = false;
-  }
-
-  // In-memory fallback
   for (const k of memCache.keys()) {
     if (k.startsWith(prefix)) {
       const entry = memCache.get(k);
