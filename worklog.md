@@ -545,3 +545,38 @@ Stage Summary:
 - Latensi Realtime: 2 gauge (DB latency + API latency) diupdate setiap 3 detik via WebSocket
 - AWS Server info: endpoint, DB host, port, region dari env vars
 - monitor-ws service running on port 3004
+---
+Task ID: 1
+Agent: Main
+Task: Push to Git with Docker + ghcr + CI/CD for STB deployment
+
+Work Log:
+- Explored project structure: Next.js 16 ERP with Supabase PostgreSQL
+- Found existing git repo with remote origin at github.com/henryarthanto/erpstb.git
+- Updated .gitignore to include .env (removed .env* exclusion, only ignore .env.local)
+- Created .env.example with documentation for all environment variables
+- Rewrote Dockerfile for STB deployment:
+  - Multi-arch support (linux/amd64, linux/arm64)
+  - Bun runtime instead of Node.js
+  - Proper Prisma client copy for production
+  - Health check endpoint
+- Created docker-compose.yml with memory limits and health checks
+- Updated CI/CD pipeline (.github/workflows/docker-publish.yml):
+  - Multi-arch Docker build with QEMU + Buildx
+  - Push to GHCR with semantic versioning tags
+  - Auto-deploy to STB via SSH (needs secrets configured)
+  - Deployment status notification job
+- Created deploy scripts:
+  - install.sh: Full STB setup (Docker + docker-compose + .env template)
+  - update.sh: Pull latest image and restart
+  - healthcheck.sh: Cron-ready health monitoring with auto-restart
+  - setup-cron.sh: Configure cron jobs for health check, auto-update, cleanup
+- Updated .dockerignore to exclude unnecessary files
+- Committed all changes and pushed to GitHub (main branch)
+
+Stage Summary:
+- GitHub repo: henryarthanto/erpstb (main branch, commit 12240b4)
+- Docker image: ghcr.io/henryarthanto/erpstb:latest (will be built on next push)
+- CI/CD: Builds on push to main, multi-arch (amd64+arm64)
+- STB deployment: Run deploy/install.sh on STB, then docker-compose up -d
+- Needs GitHub Secrets: STB_HOST, STB_USER, STB_SSH_KEY, STB_PORT for auto-deploy
