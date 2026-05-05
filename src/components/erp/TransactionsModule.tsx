@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Check, X, ChevronRight, Smartphone, Loader2, Pencil, Banknote, Truck, UserCheck, UserX, Wallet } from 'lucide-react';
+import { Plus, Check, X, ChevronRight, Smartphone, Loader2, Pencil, Banknote, Truck, UserCheck, UserX, Wallet, Tag } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -260,11 +260,20 @@ function PWAOrderApprovalDialog({
                   const priceVal = parseFloat(prices[item.id]) || 0;
                   const subtotal = priceVal * item.qty;
                   const unitLabel = product?.unit || item.product?.unit || 'pcs';
+                  const hasDealPrice = dealPrices[item.productId] && dealPrices[item.productId] > 0;
 
                   return (
                     <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.productName}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium truncate">{item.productName}</p>
+                          {hasDealPrice && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">
+                              <Tag className="w-2.5 h-2.5" />
+                              Deal {formatCurrency(dealPrices[item.productId])}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {item.qty} {unitLabel}
                           {showHpp && product?.avgHpp > 0 && (
@@ -281,7 +290,7 @@ function PWAOrderApprovalDialog({
                           value={prices[item.id] || ''}
                           onChange={(e) => handlePriceChange(item.id, e.target.value)}
                           className="w-32 h-8 text-sm text-right"
-                          placeholder="0"
+                          placeholder={hasDealPrice ? formatCurrency(dealPrices[item.productId]) : '0'}
                         />
                       </div>
                       <div className="w-28 text-right">

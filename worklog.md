@@ -282,3 +282,26 @@ Stage Summary:
 - Approval form pre-fills with customer's negotiated deal price (not global sellingPrice)
 - Visual badge shows "Deal Rp XX" so sales knows the previous agreement
 - Files modified: src/lib/supabase.ts, src/app/api/pwa-orders/pending/route.ts, src/components/erp/PWAOrdersModule.tsx
+
+---
+Task ID: 13
+Agent: Main
+Task: Fix "Set Harga" in Transactions module for PWA orders
+
+Work Log:
+- User reported cannot set prices for PWA orders in the Transactions module
+- Found root cause: `products` query in TransactionsModule only enabled when `showSaleForm` is true
+- When user clicks "Set Harga" on a PWA order without opening sale form first → `allProducts` = [] → `defaultPrices` empty → no prices shown
+- Fix 1: Changed products query `enabled` from `showSaleForm` to `showSaleForm || !!pwaOrderForApproval`
+- Fix 2: Added `/api/customer-prices` API endpoint to fetch deal prices by customerId
+- Fix 3: Added deal price fetch in PWAOrderApprovalDialog — fetches customer_prices when dialog opens
+- Fix 4: Price pre-fill priority: deal price > sellingPrice > empty
+- Fix 5: Added green "Deal Rp XX" badge on items with existing deal prices
+- Fix 6: Price input placeholder shows deal price when available
+- Lint clean, server compiles without errors
+
+Stage Summary:
+- PWA orders in Transactions module now properly show "Set Harga" dialog with pre-filled prices
+- Products load when dialog opens (no need to open sale form first)
+- Deal prices from previous orders are shown and pre-filled
+- Files modified: src/components/erp/TransactionsModule.tsx, src/app/api/customer-prices/route.ts (new)
