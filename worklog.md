@@ -397,3 +397,42 @@ Stage Summary:
 - CRITICAL BUG FIXED: parseSelectString now handles nested parentheses properly
 - ALL PostgREST-style selects with nested relations (e.g., items with embedded products) now work correctly
 - PWA Order Approval dialog will now show items (MRS 57x30) with the price input
+---
+Task ID: 3
+Agent: Main
+Task: Fix transactions disappearing — parseSelectString generating invalid Prisma queries
+
+Work Log:
+- User reported "koq transaksinya hilang?" — all transactions disappeared from Transaksi module
+- Checked dev.log and found Prisma error: `Unknown argument 'product'. Available options are marked with ?.`
+- Root cause: `parseSelectString()` had TWO bugs when generating Prisma query structures:
+
+**Bug 1: Nested relations placed outside `select` instead of inside**
+- When parsing `items:transaction_items(id, price, product:products(id, name))`:
+  - Code produced: `{ select: { id, price }, product: { select: { ... } } }` (WRONG)
+  - Prisma requires: `{ select: { id, price, product: { select: { ... } } } }` (CORRECT)
+- Fix: Merge `includeConfig` entries INTO `nestedInclude.select` when both scalar fields and relations exist
+
+**Bug 2: Empty `selectFields` (from `*` wildcard) creating broken `select: {}`**
+- When parsing `transaction_items(*, product:products(*))`:
+  - `*` is silently skipped (not a field name), leaving `selectFields = {}` (empty object)
+  - Code checked `if (nestedParse.selectFields)` — `{}` is truthy! So `nestedInclude.select = {}`
+  - This created `{ select: {}, product: true }` → Prisma error: `Unknown argument 'product'`
+  - Fix: Check `Object.keys(selectFields).length > 0` instead of truthy check
+  - When no scalar fields but relations exist → use include mode (spread relations directly)
+
+**Impact**: These bugs affected ALL nested relation queries across the entire codebase:
+- `items:transaction_items(*, product:products(*))` — transactions, PWA orders, invoices
+- `unit_products:unit_products(*, unit:units(*))` — products
+- `customer:customers(id, name)` inside transaction selects — receivables, cash flow, finance requests
+- `received_by:users!received_by_id(id, name)` — payments
+
+- Applied fix to both embedded relation handler (alias:table(fields)) and direct relation handler (table(fields))
+- Lint clean (only pre-existing keep-alive.js errors)
+- Verified: `GET /api/transactions?type=sale 200` — transactions load without errors
+
+Stage Summary:
+- Transactions are now visible again in Transaksi module
+- ALL nested relation queries across the codebase now generate correct Prisma structures
+- PWA order items with product data will now load correctly
+- File modified: src/lib/supabase.ts (parseSelectString function)

@@ -233,11 +233,18 @@ function parseSelectString(selectStr: string): {
         if (modelName && /^[\w]+$/.test(alias)) {
           const nestedParse = parseSelectString(nestedFields || '*');
           const nestedInclude: Record<string, any> = {};
-          if (nestedParse.selectFields) {
-            nestedInclude.select = nestedParse.selectFields;
+          const hasScalarFields = nestedParse.selectFields && Object.keys(nestedParse.selectFields).length > 0;
+          if (hasScalarFields) {
+            nestedInclude.select = { ...nestedParse.selectFields };
           }
           if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
-            Object.assign(nestedInclude, nestedParse.includeConfig);
+            if (nestedInclude.select) {
+              // Has scalar fields → merge relations INTO select (Prisma requires relations inside select)
+              Object.assign(nestedInclude.select, nestedParse.includeConfig);
+            } else {
+              // No scalar fields (e.g. '*') → spread relations directly (include mode, auto-includes all scalars)
+              Object.assign(nestedInclude, nestedParse.includeConfig);
+            }
           }
           const includeKey = snakeToCamel(alias);
           if (Object.keys(nestedInclude).length === 0) {
@@ -263,13 +270,20 @@ function parseSelectString(selectStr: string): {
         } else {
           const nestedParse = parseSelectString(nestedFields);
           const nestedInclude: Record<string, any> = {};
-          if (nestedParse.selectFields) {
-            nestedInclude.select = nestedParse.selectFields;
+          const hasScalarFields = nestedParse.selectFields && Object.keys(nestedParse.selectFields).length > 0;
+          if (hasScalarFields) {
+            nestedInclude.select = { ...nestedParse.selectFields };
           }
           if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
-            Object.assign(nestedInclude, nestedParse.includeConfig);
+            if (nestedInclude.select) {
+              // Has scalar fields → merge relations INTO select (Prisma requires relations inside select)
+              Object.assign(nestedInclude.select, nestedParse.includeConfig);
+            } else {
+              // No scalar fields → spread relations directly (include mode, auto-includes all scalars)
+              Object.assign(nestedInclude, nestedParse.includeConfig);
+            }
           }
-          includeConfig[modelName] = Object.keys(nestedInclude).length === 0 ? nestedInclude : true;
+          includeConfig[modelName] = Object.keys(nestedInclude).length > 0 ? nestedInclude : true;
         }
       }
       continue;
