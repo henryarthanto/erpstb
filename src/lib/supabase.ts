@@ -48,13 +48,14 @@ function loadDatabaseUrl(): string {
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 const _resolvedDbUrl = loadDatabaseUrl();
 
-// Add connection pool parameters for multi-user concurrency
+// Add connection pool parameters based on STB config
+import { DB_POOL } from './stb-config';
+
 function buildPooledUrl(url: string): string {
   try {
     const u = new URL(url);
-    // Set connection limits for multi-user access
-    u.searchParams.set('connection_limit', '10');
-    u.searchParams.set('pool_timeout', '30');
+    u.searchParams.set('connection_limit', String(DB_POOL.tx.max));
+    u.searchParams.set('pool_timeout', String(Math.floor(DB_POOL.tx.connectionTimeoutMs / 1000)));
     return u.toString();
   } catch {
     return url;
@@ -66,7 +67,8 @@ export const prisma = globalForPrisma.prisma || new PrismaClient({
   // Limit connections for multi-user — prevents connection exhaustion on Supabase
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+// Save singleton in ALL environments to prevent connection leaks in production
+globalForPrisma.prisma = globalForPrisma.prisma ?? prisma;
 
 // ─────────────────────────────────────────────────────────────────────
 // TYPES
@@ -947,11 +949,13 @@ class PostgrestQueryBuilder {
         case 'lte':
           conditions.push({ [camelField]: { lte: this.toPrismaValue(filter.value) } });
           break;
-        case 'ilike':
+        case 'ilike': {
+          const pattern = filter.value as string;
+          conditions.push({ [camelField]: { contains: pattern.replace(/%/g, ''), mode: 'insensitive' } });
+          break;
+        }
         case 'like': {
           const pattern = filter.value as string;
-          // PostgreSQL is case-sensitive by default for LIKE.
-          // Using contains is more natural and index-friendly.
           conditions.push({ [camelField]: { contains: pattern.replace(/%/g, '') } });
           break;
         }
@@ -1114,14 +1118,20 @@ class PostgrestQueryBuilder {
           conditions.push({ [camelField]: { lte: this.toPrismaValue(this.parseFilterValue(value)) } });
           break;
         case 'like':
-        case 'ilike':
           conditions.push({ [camelField]: { contains: value.replace(/%/g, '') } });
+          break;
+        case 'ilike':
+          conditions.push({ [camelField]: { contains: value.replace(/%/g, ''), mode: 'insensitive' } });
           break;
         case 'is':
           conditions.push({ [camelField]: value === 'null' ? null : value });
           break;
         case 'in': {
-          const vals = value.split('.').map((v) => this.parseFilterValue(v));
+          // PostgREST in format: (val1,val2,val3) or val1.val2.val3
+          const cleanVal = value.replace(/^\(|\)$/g, '');
+          const vals = cleanVal.includes(',') 
+            ? cleanVal.split(',').map((v) => this.parseFilterValue(v.trim()))
+            : cleanVal.split('.').map((v) => this.parseFilterValue(v));
           conditions.push({ [camelField]: { in: vals } });
           break;
         }

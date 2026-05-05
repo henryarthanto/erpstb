@@ -62,10 +62,11 @@ fi
 # Install docker-compose if not present
 if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
   echo -e "${YELLOW}[4/6]${NC} Installing docker-compose..."
-  apt-get install -y -qq docker-compose-plugin > /dev/null 2>&1 || \
-    curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${DOCKER_ARCH}" \
-      -o /usr/local/bin/docker-compose && \
+  if ! apt-get install -y -qq docker-compose-plugin > /dev/null 2>&1; then
+    COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${DOCKER_ARCH}"
+    curl -SL "$COMPOSE_URL" -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
+  fi
 else
   echo -e "${YELLOW}[4/6]${NC} docker-compose already installed, skipping..."
 fi
