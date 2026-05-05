@@ -19,7 +19,8 @@ import {
   MessageSquare,
   MapPin,
   Mail,
-  RefreshCw
+  RefreshCw,
+  Truck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,13 +41,12 @@ export default function SalesDashboard() {
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month');
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'customers' | 'unpaid'>('transactions');
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'customers' | 'unpaid' | 'deliveries'>('transactions');
   const [followUpOpen, setFollowUpOpen] = useState<any>(null);
   const [followUpType, setFollowUpType] = useState('whatsapp');
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpOutcome, setFollowUpOutcome] = useState('');
   const [followUpLoading, setFollowUpLoading] = useState(false);
-  const [followUpHistoryOpen, setFollowUpHistoryOpen] = useState<any>(null);
   const [lostOpen, setLostOpen] = useState<any>(null);
   const [lostReason, setLostReason] = useState('');
   const [lostLoading, setLostLoading] = useState(false);
@@ -65,6 +65,7 @@ export default function SalesDashboard() {
   const inactiveCustomers = data?.inactiveCustomers || [];
   const recentTransactions = data?.recentTransactions || [];
   const unpaidTransactions = data?.unpaidTransactions || [];
+  const pendingDeliveries = data?.pendingDeliveries || [];
   const chartData = data?.chartData || [];
 
   const achievedPercent = target && target.targetAmount > 0 ? Math.min(100, Math.round((target.achievedAmount / target.targetAmount) * 100)) : 0;
@@ -275,6 +276,23 @@ export default function SalesDashboard() {
       </Card>
 
       {/* Tabs: Transactions, Chart, Inactive Customers & Unpaid */}
+      {/* Pending Deliveries Alert */}
+      {pendingDeliveries.length > 0 && activeTab !== 'deliveries' && (
+        <Card className="border-amber-200 dark:border-amber-900 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab('deliveries')}>
+          <CardContent className="p-3 flex items-center gap-3">
+            <Truck className="w-5 h-5 text-amber-600 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{pendingDeliveries.length} Pengiriman Belum Selesai</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {pendingDeliveries.map((d: any) => d.customer?.name).filter(Boolean).slice(0, 3).join(', ')}
+                {pendingDeliveries.length > 3 && ` +${pendingDeliveries.length - 3} lagi`}
+              </p>
+            </div>
+            <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">Lihat</Badge>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs value={activeTab} onValueChange={(v: string) => setActiveTab(v as typeof activeTab)}>
         {/* Mobile: Dropdown selector */}
         <div className="sm:hidden mb-1">
@@ -292,6 +310,9 @@ export default function SalesDashboard() {
               </SelectItem>
               <SelectItem value="unpaid">
                 Belum Bayar{unpaidTransactions.length > 0 ? ` (${unpaidTransactions.length})` : ''}
+              </SelectItem>
+              <SelectItem value="deliveries">
+                Pengiriman{pendingDeliveries.length > 0 ? ` (${pendingDeliveries.length})` : ''}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -316,6 +337,12 @@ export default function SalesDashboard() {
             Belum Bayar
             {unpaidTransactions.length > 0 && (
               <Badge className="ml-2 bg-amber-500 text-white text-xs px-1.5">{unpaidTransactions.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="deliveries" className="shrink-0 whitespace-nowrap text-xs sm:text-sm relative">
+            Pengiriman
+            {pendingDeliveries.length > 0 && (
+              <Badge className="ml-2 bg-orange-500 text-white text-xs px-1.5">{pendingDeliveries.length}</Badge>
             )}
           </TabsTrigger>
         </TabsList>
@@ -436,6 +463,46 @@ export default function SalesDashboard() {
                           Lost
                         </Button>
                       </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Pending Deliveries Tab */}
+        <TabsContent value="deliveries">
+          <div className="space-y-2">
+            {pendingDeliveries.length === 0 ? (
+              <Card>
+                <CardContent className="p-4 sm:p-6 text-center">
+                  <Truck className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-xs sm:text-sm text-muted-foreground">Semua pengiriman sudah selesai!</p>
+                </CardContent>
+              </Card>
+            ) : (
+              pendingDeliveries.map((d: any) => (
+                <Card key={d.id} className="hover:shadow-md transition-shadow overflow-hidden">
+                  <CardContent className="p-2.5 sm:p-3">
+                    <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                      <h3 className="font-medium text-xs">{d.invoiceNo}</h3>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <Badge variant="outline" className="text-[10px] sm:text-xs px-1.5 py-0">{formatDate(d.transactionDate)}</Badge>
+                        <Badge variant="outline" className="border-orange-300 text-orange-600 bg-orange-50 text-[10px] sm:text-xs px-1.5 py-0">
+                          ⏳ Menunggu Kurir
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{d.customer?.name || 'Walk-in'}</p>
+                    <div className="flex items-center gap-3 mt-1 text-xs sm:text-sm">
+                      <span className="font-medium">{formatCurrency(d.total)}</span>
+                      {d.paymentMethod === 'piutang' && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">📋 Piutang</Badge>
+                      )}
+                      {d.paymentMethod === 'tempo' && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">📅 Tempo</Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

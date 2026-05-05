@@ -39,6 +39,8 @@ export const MODULE_POLLING: Record<string, number> = {
   deliveries: 45_000,
   // Salaries: 60s
   salaries: 60_000,
+  // Sales dashboard: 45s
+  'sales-dashboard': 45_000,
   // Sales tasks: 45s
   sales_tasks: 45_000,
   // Stock movements: 60s
@@ -80,6 +82,8 @@ export const QUERY_STALE_TIMES: Record<string, number> = {
   'dashboard': 120_000,
   'salaries': 60_000,
   'sales-tasks': 30_000,
+  'sales-dashboard': 30_000,
+  'courier-dashboard': 30_000,
 };
 
 // =====================================================================
@@ -111,23 +115,30 @@ function NetworkRecoveryHandler() {
 
     const channel = new BroadcastChannel('erp-cache-sync');
 
+    // ── Listener: receive targeted invalidations from other tabs ──
     channel.onmessage = (event) => {
       if (event.data?.type === 'invalidate') {
         const queryKey = event.data.queryKey;
-        // Only process targeted invalidations — ignore empty key (would invalidate ALL)
         if (queryKey && queryKey.length > 0) {
           queryClient.invalidateQueries({ queryKey });
         }
       }
     };
 
-    // NOTE: Removed mutation success broadcast that posted { queryKey: [] }.
-    // Broadcasting empty queryKey invalidated ALL queries in every tab on every mutation.
-    // WebSocket realtime sync (useRealtimeSync) now handles cross-tab invalidation
-    // with targeted event → query key mapping.
+    // ── Sender: relay query invalidations to other tabs ──
+    // When any tab invalidates a query (e.g. after mutation onSuccess),
+    // broadcast it to all other tabs so they also refetch.
+    const queryUnsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type === 'invalidated' && event.query?.queryKey) {
+        try {
+          channel.postMessage({ type: 'invalidate', queryKey: event.query.queryKey });
+        } catch { /* channel closed */ }
+      }
+    });
 
     return () => {
       channel.close();
+      queryUnsubscribe();
     };
   }, [queryClient]);
 

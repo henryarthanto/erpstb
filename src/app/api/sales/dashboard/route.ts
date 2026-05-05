@@ -73,16 +73,18 @@ export async function GET(request: NextRequest) {
       totalCompanyTransactions: (companyTx || []).length,
     };
 
-    // Sales target
+    // Sales target — ALWAYS fetch current monthly target regardless of period filter
     const now = new Date();
     let target: any = null;
-    if (period === 'month') {
-      const { data: salesTarget } = await db.from('sales_targets').select(`*, user:users!user_id(id, name, email)`).eq('user_id', salesId).eq('period', 'monthly').eq('year', now.getFullYear()).eq('month', now.getMonth() + 1).eq('status', 'active').maybeSingle();
-      if (salesTarget) {
-        const achievedAmount = personalStats.totalSales;
-        const achievedPercentage = salesTarget.target_amount > 0 ? Math.round((achievedAmount / salesTarget.target_amount) * 100) : 0;
-        target = { ...toCamelCase(salesTarget), achievedAmount, achievedPercentage };
-      }
+    const { data: salesTarget } = await db.from('sales_targets').select(`*, user:users!user_id(id, name, email)`).eq('user_id', salesId).eq('period', 'monthly').eq('year', now.getFullYear()).eq('month', now.getMonth() + 1).eq('status', 'active').maybeSingle();
+    if (salesTarget) {
+      // Calculate achieved amount based on CURRENT MONTH transactions (not the selected period)
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 23, 59, 59, 999);
+      const { data: monthTx } = await db.from('transactions').select('total').eq('type', 'sale').in('status', ['approved', 'paid']).eq('created_by_id', salesId).gte('transaction_date', monthStart.toISOString()).lte('transaction_date', monthEnd.toISOString());
+      const achievedAmount = (monthTx || []).reduce((s: number, t: any) => s + (t.total || 0), 0);
+      const achievedPercentage = salesTarget.target_amount > 0 ? Math.round((achievedAmount / salesTarget.target_amount) * 100) : 0;
+      target = { ...toCamelCase(salesTarget), achievedAmount, achievedPercentage };
     }
 
     // Inactive customers
@@ -124,10 +126,11 @@ export async function GET(request: NextRequest) {
 
     const chartData = getChartBuckets(chartRaw || [], period);
 
-    // Unpaid for pending deliveries
+    // Pending deliveries for sales (undelivered approved transactions)
     const { data: pendingDeliveries } = await db.from('transactions').select(`
-      id, customer:customers(id, name), unit:units(id, name)
-    `).eq('created_by_id', salesId).eq('type', 'sale').eq('status', 'approved').is('delivered_at', null).order('created_at', { ascending: false }).limit(10);
+      id, invoice_no, total, paid_amount, remaining_amount, payment_method, transaction_date, created_at,
+      customer:customers(id, name, phone), unit:units(id, name)
+    `).eq('created_by_id', salesId).eq('type', 'sale').eq('status', 'approved').is('delivered_at', null).order('created_at', { ascending: false }).limit(20);
 
     return NextResponse.json({ personalStats, companyStats, target, inactiveCustomers, recentTransactions: recentTransactionsData, unpaidTransactions: unpaidData, chartData, pendingDeliveries: rowsToCamelCase(pendingDeliveries || []) });
   } catch (error: any) {

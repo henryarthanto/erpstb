@@ -360,6 +360,9 @@ export default function CourierDashboard() {
           <TabsTrigger value="pending">
             Pengiriman Pending ({pendingDeliveries.length})
           </TabsTrigger>
+          <TabsTrigger value="history">
+            Riwayat Pengiriman
+          </TabsTrigger>
           <TabsTrigger value="handovers">
             Riwayat Setor ({handoverHistory.length})
           </TabsTrigger>
@@ -386,6 +389,38 @@ export default function CourierDashboard() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-3">
+          <Card>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950">
+                  <p className="text-lg font-bold text-emerald-700">{stats?.totalDeliveries || 0}</p>
+                  <p className="text-xs text-muted-foreground">Total Selesai</p>
+                </div>
+                <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950">
+                  <p className="text-lg font-bold text-amber-700">{formatCurrency(stats?.cashCollected || 0)}</p>
+                  <p className="text-xs text-muted-foreground">Cash Dikumpulkan</p>
+                </div>
+                <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950">
+                  <p className="text-lg font-bold text-blue-700">{formatCurrency(stats?.totalCommission || 0)}</p>
+                  <p className="text-xs text-muted-foreground">Total Komisi</p>
+                </div>
+              </div>
+              <div className="flex gap-2 text-xs">
+                <span className="text-emerald-600">📍 {stats?.nearDeliveries || 0} Dekat</span>
+                <span className="text-orange-600">🗺️ {stats?.farDeliveries || 0} Jauh</span>
+                <span className="text-red-600">📋 {formatCurrency(stats?.piutangRemaining || 0)} Piutang</span>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center text-muted-foreground">
+              <Truck className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Detail riwayat pengiriman tersedia di grafik dan statistik di atas</p>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="handovers" className="space-y-3">
@@ -433,7 +468,10 @@ export default function CourierDashboard() {
             {/* Unit-specific balance info */}
             <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4">
               <p className="text-sm text-muted-foreground">Saldo Cash di Tangan</p>
-              <p className="text-2xl font-bold text-amber-700">{formatCurrency(cashBalance?.current || 0)}</p>
+              <p className="text-2xl font-bold text-amber-700">{formatCurrency(handoverUnitBalance)}</p>
+              {hasMultipleUnits && (
+                <p className="text-xs text-muted-foreground">Total semua unit: {formatCurrency(cashBalance?.current || 0)}</p>
+              )}
 
               {/* Show per-unit breakdown when multiple units have balance */}
               {hasMultipleUnits && unitsWithBalance.length > 1 && (

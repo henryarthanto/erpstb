@@ -143,6 +143,9 @@ const TABLE_TO_QUERY_KEYS: Record<string, string[][]> = {
   units: [
     ['units'], ['products'],
   ],
+  sales_targets: [
+    ['sales-dashboard'],
+  ],
   cashback_withdrawal: [
     ['dashboard'], ['cashbacks'],
   ],
