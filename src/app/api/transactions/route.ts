@@ -218,7 +218,7 @@ export async function GET(request: NextRequest) {
 
     // Cache the result for 30 seconds
     try {
-      await cacheSet(cacheKey, transactionsCamel, { ttlMs: 30_000 });
+      await cacheSet(cacheKey, transactionsCamel, { ttlMs: 15_000 }); // 15s server cache (client has 30s staleTime)
     } catch {
       // Cache write failure is non-fatal
     }

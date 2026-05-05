@@ -47,10 +47,24 @@ function loadDatabaseUrl(): string {
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 const _resolvedDbUrl = loadDatabaseUrl();
+
+// Add connection pool parameters for multi-user concurrency
+function buildPooledUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    // Set connection limits for multi-user access
+    u.searchParams.set('connection_limit', '10');
+    u.searchParams.set('pool_timeout', '30');
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 export const prisma = globalForPrisma.prisma || new PrismaClient({
-  datasourceUrl: _resolvedDbUrl,
-  // Limit connections for 2GB STB — prevents connection exhaustion
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  datasourceUrl: buildPooledUrl(_resolvedDbUrl),
+  // Limit connections for multi-user — prevents connection exhaustion on Supabase
+  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
@@ -1008,14 +1022,57 @@ class PostgrestQueryBuilder {
   }
 
   /**
+   * Split a filter string by commas, respecting parentheses nesting.
+   * e.g. "and(a.eq.1,b.eq.2),c.eq.3" → ["and(a.eq.1,b.eq.2)", "c.eq.3"]
+   */
+  private splitFilterParts(str: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let current = '';
+    for (const char of str) {
+      if (char === '(') depth++;
+      else if (char === ')') depth--;
+      if (char === ',' && depth === 0) {
+        parts.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    if (current.trim()) parts.push(current);
+    return parts;
+  }
+
+  /**
    * Parse a PostgREST filter string like "col1.eq.val1,col2.ilike.%val2%"
    * into Prisma where conditions.
    */
   private parseOrString(filterStr: string): any[] {
-    const parts = filterStr.split(',').map((p) => p.trim()).filter(Boolean);
+    // Split by comma, but respect parentheses (e.g. and(a.eq.1,b.eq.2),c.eq.3)
+    const parts = this.splitFilterParts(filterStr);
     const conditions: any[] = [];
 
     for (const part of parts) {
+      const trimmed = part.trim();
+
+      // Handle and(...) and or(...) groups
+      if (trimmed.startsWith('and(') && trimmed.endsWith(')')) {
+        const inner = trimmed.slice(4, -1);
+        const innerConditions = this.parseOrString(inner);
+        if (innerConditions.length > 0) {
+          conditions.push(innerConditions.length === 1 ? innerConditions[0] : { AND: innerConditions });
+        }
+        continue;
+      }
+      if (trimmed.startsWith('or(') && trimmed.endsWith(')')) {
+        const inner = trimmed.slice(3, -1);
+        const innerConditions = this.parseOrString(inner);
+        if (innerConditions.length > 0) {
+          conditions.push({ OR: innerConditions });
+        }
+        continue;
+      }
+
       // Split by first dot: "column.operator.value"
       const firstDot = part.indexOf('.');
       if (firstDot === -1) continue;

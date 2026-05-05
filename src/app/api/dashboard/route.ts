@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
           FROM transactions
           WHERE transaction_date >= ${filterStart} AND transaction_date <= ${filterEnd}
             ${unitFilter}
-          GROUP BY transaction_date::date
+          GROUP BY TO_CHAR(transaction_date, 'YYYY-MM-DD')
           ORDER BY 1
         `,
         [],

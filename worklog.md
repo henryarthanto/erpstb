@@ -481,3 +481,38 @@ Stage Summary:
 - Complete rewrite of parseSelectString with buildNestedConfig helper ensures correctness
 - Prisma rules (no select+include together, relations must be in select/include) properly enforced
 - Files modified: src/lib/supabase.ts (parseSelectString + buildNestedConfig + executeSelect), src/app/api/pwa/[code]/products/route.ts
+---
+Task ID: 5
+Agent: Main
+Task: Comprehensive audit — fix all bugs, improve performance, multi-user support
+
+Work Log:
+- Audited dev.log (65K+ lines) — found 3 recurring error categories:
+  1. Dashboard chartData SQL error (310 occurrences)
+  2. Customers PrismaClientValidationError (240 occurrences)
+  3. Prisma query logging spam (65K lines)
+
+**Fix 1: Dashboard chartData SQL GROUP BY error**
+- Raw SQL: GROUP BY transaction_date::date but SELECT uses TO_CHAR(transaction_date, YYYY-MM-DD)
+- PostgreSQL strict mode requires GROUP BY expression to match SELECT
+- Fix: Changed GROUP BY to use TO_CHAR matching SELECT
+
+**Fix 2: PostgREST and() nested filter support**
+- Monitoring route uses .or(and(status.eq.active,...),...) which parseOrString could not handle
+- Added splitFilterParts() — parenthesis-aware comma splitter
+- Added and(...) and or(...) recursive parsing in parseOrString
+
+**Fix 3: Prisma connection pooling for multi-user**
+- Added buildPooledUrl() — appends connection_limit=10 and pool_timeout=30 to DATABASE_URL
+- Prevents connection exhaustion when 10+ users access simultaneously
+
+**Fix 4: Remove verbose query logging in dev mode**
+- Changed Prisma log from query,error,warn to error,warn only
+- Dev log was 65K lines of SQL — massive I/O overhead
+
+**Fix 5: Optimize frontend polling intervals**
+- Increased MODULE_POLLING intervals across all modules (30-50% slower)
+- Products: 60s to 120s, Suppliers: 120s to 180s, Users: 120s to 180s
+- Server-side transaction cache: 30s to 15s TTL
+
+- Files modified: src/lib/supabase.ts, src/app/api/dashboard/route.ts, src/providers/query-provider.tsx, src/app/api/transactions/route.ts

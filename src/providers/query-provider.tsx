@@ -27,46 +27,46 @@ export const POLLING_CONFIG = {
 // With WebSocket realtime sync (useRealtimeSync), polling is only a fallback
 // for when WebSocket is disconnected. Intervals are generous.
 export const MODULE_POLLING: Record<string, number> = {
-  // Events/notifications: 30s (fallback when WS disconnected)
-  events: 30_000,
+  // Events/notifications: 45s (fallback when WS disconnected)
+  events: 45_000,
   // Dashboard: 300s — realtime sync handles most updates
   dashboard: 300_000,
-  // Transactions: 60s
-  transactions: 60_000,
-  // Products: 60s
-  products: 60_000,
-  // Payments: 60s
-  payments: 60_000,
-  // Deliveries: 45s
-  deliveries: 45_000,
-  // Salaries: 60s
-  salaries: 60_000,
-  // Sales dashboard: 45s
-  'sales-dashboard': 45_000,
-  // Sales tasks: 45s
-  sales_tasks: 45_000,
-  // Stock movements: 60s
-  stock_movements: 60_000,
-  // Suppliers: 120s
-  suppliers: 120_000,
-  // Customers: 60s
-  customers: 60_000,
-  // Cashbacks: 60s
-  cashbacks: 60_000,
-  // Finance: 45s
-  finance: 45_000,
-  // Users: 120s
-  users: 120_000,
-  // Reports: 120s
-  reports: 120_000,
-  // Courier: 45s
-  courier: 45_000,
-  // Receivables: 60s
-  receivables: 60_000,
-  // Cash boxes: 45s
-  cash_boxes: 45_000,
-  // PWA orders: 30s
-  pwa_orders: 30_000,
+  // Transactions: 90s
+  transactions: 90_000,
+  // Products: 120s — product data rarely changes
+  products: 120_000,
+  // Payments: 90s
+  payments: 90_000,
+  // Deliveries: 60s
+  deliveries: 60_000,
+  // Salaries: 120s
+  salaries: 120_000,
+  // Sales dashboard: 60s
+  'sales-dashboard': 60_000,
+  // Sales tasks: 60s
+  sales_tasks: 60_000,
+  // Stock movements: 120s
+  stock_movements: 120_000,
+  // Suppliers: 180s — supplier data rarely changes
+  suppliers: 180_000,
+  // Customers: 90s
+  customers: 90_000,
+  // Cashbacks: 120s
+  cashbacks: 120_000,
+  // Finance: 60s
+  finance: 60_000,
+  // Users: 180s — user data rarely changes
+  users: 180_000,
+  // Reports: 180s
+  reports: 180_000,
+  // Courier: 60s
+  courier: 60_000,
+  // Receivables: 90s
+  receivables: 90_000,
+  // Cash boxes: 60s
+  cash_boxes: 60_000,
+  // PWA orders: 45s
+  pwa_orders: 45_000,
 };
 
 // Stale times for different query keys — used by useSharedData and other hooks
