@@ -684,11 +684,14 @@ export default function TransactionsModule() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((t: Transaction) => (
-                      <TableRow key={t.id}>
+                    {transactions.map((t: Transaction) => {
+                      const pwaPending = isPwaOrder(t) && t.status === 'pending';
+                      return (
+                      <React.Fragment key={t.id}>
+                      <TableRow>
                         <TableCell className="font-mono text-sm">
                           <div className="flex items-center gap-1.5">
-                            {isPwaOrder(t) && t.status === 'pending' && (
+                            {pwaPending && (
                               <Badge variant="outline" className="text-[9px] px-1 py-0 border-orange-300 text-orange-600 shrink-0">
                                 <Smartphone className="w-2.5 h-2.5 mr-0.5" />PWA
                               </Badge>
@@ -699,7 +702,7 @@ export default function TransactionsModule() {
                         <TableCell>{formatDate(t.transactionDate)}</TableCell>
                         <TableCell>{t.customer?.name || '-'}</TableCell>
                         <TableCell className="text-right font-medium">
-                          {isPwaOrder(t) && t.status === 'pending' ? (
+                          {pwaPending ? (
                             <span className="text-orange-500 text-xs">Belum ditentukan</span>
                           ) : formatCurrency(t.total)}
                         </TableCell>
@@ -711,14 +714,40 @@ export default function TransactionsModule() {
                           )}>{getTransactionStatusLabel(t.status)}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <TransactionActions transaction={t} onView={() => setSelectedTransaction(t)}
-                            canApprove={canApprove} canCancel={canCancel}
-                            onApprove={(id) => approveMutation.mutate(id)} onCancel={(id) => cancelMutation.mutate(id)}
-                            onSetPwaPrice={isPwaOrder(t) && t.status === 'pending' && canApprovePwa ? () => setPwaOrderForApproval(t) : undefined}
-                          />
+                          {pwaPending && canApprovePwa ? (
+                            <Button size="sm" className="h-7 text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setPwaOrderForApproval(t)}>
+                              <Pencil className="w-3.5 h-3.5 mr-1" /> Set Harga
+                            </Button>
+                          ) : (
+                            <TransactionActions transaction={t} onView={() => setSelectedTransaction(t)}
+                              canApprove={canApprove} canCancel={canCancel}
+                              onApprove={(id) => approveMutation.mutate(id)} onCancel={(id) => cancelMutation.mutate(id)}
+                              onSetPwaPrice={pwaPending && canApprovePwa ? () => setPwaOrderForApproval(t) : undefined}
+                            />
+                          )}
                         </TableCell>
                       </TableRow>
-                    ))}
+                      {/* PWA Pending: Show item summary row */}
+                      {pwaPending && (t.items || []).length > 0 && (
+                        <TableRow className="bg-orange-50/50 dark:bg-orange-950/10">
+                          <TableCell colSpan={6} className="py-2 px-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Smartphone className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                              <span className="text-xs font-medium text-orange-700 dark:text-orange-400">Items:</span>
+                              {(t.items || []).map((item: any, idx: number) => (
+                                <span key={item.id} className="inline-flex items-center text-xs bg-white dark:bg-muted rounded-md px-2 py-0.5 border border-orange-200 dark:border-orange-900/50">
+                                  <span className="font-medium">{item.productName}</span>
+                                  <span className="text-muted-foreground ml-1">&times;{item.qty}</span>
+                                  {idx < (t.items || []).length - 1 && <span className="text-muted-foreground/40 ml-1">,</span>}
+                                </span>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      </React.Fragment>
+                      );
+                    })}
                     {transactions.length === 0 && (
                       <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Tidak ada transaksi</TableCell></TableRow>
                     )}
@@ -770,6 +799,16 @@ export default function TransactionsModule() {
                         <p className="text-xs text-red-500 shrink-0">Sisa {formatCurrency(t.remainingAmount)}</p>
                       )}
                     </div>
+                    {/* PWA Pending Order: Show items summary */}
+                    {pwaPending && (t.items || []).length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(t.items || []).map((item: any) => (
+                          <span key={item.id} className="inline-flex items-center text-[10px] bg-orange-50 dark:bg-orange-950/20 rounded-md px-1.5 py-0.5 border border-orange-200 dark:border-orange-900/50 text-orange-700 dark:text-orange-400">
+                            {item.productName} <span className="ml-0.5 font-medium">&times;{item.qty}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {/* PWA Pending Order: Show Set Harga button */}
                     {pwaPending && canApprovePwa && (
                       <div className="flex gap-2">

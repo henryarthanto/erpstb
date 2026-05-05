@@ -324,3 +324,22 @@ Work Log:
 Stage Summary:
 - "Set Harga" dialog now always has product prices available from transaction data (no external dependency)
 - Files modified: src/app/api/transactions/route.ts, src/components/erp/TransactionsModule.tsx
+
+---
+Task ID: 15
+Agent: Main
+Task: Make PWA order items visible and Set Harga button obvious in Transactions module
+
+Work Log:
+- User reported: cannot see items ordered and cannot find where to set price
+- Root cause: Desktop table only showed a tiny pencil icon (ghost button) for PWA orders, no item details shown
+- Fix 1: Desktop — replaced tiny ghost icon with clear orange "Set Harga" button text for PWA pending orders
+- Fix 2: Desktop — added item summary row below each PWA pending order showing item names + qty (e.g. "MRS 57x30 ×1")
+- Fix 3: Mobile — added item summary badges showing each ordered product name + qty
+- Lint clean, server compiles without errors
+
+Stage Summary:
+- PWA pending orders now show: items ordered (product name × qty) AND a clear orange "Set Harga" button
+- Desktop: item summary row below the order + orange button in Actions column
+- Mobile: orange item badges + orange "Set Harga & Approve" button
+- Files modified: src/components/erp/TransactionsModule.tsx
