@@ -75,13 +75,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Make package public
+        if: success()
+        run: |
+          # Wait for registry to propagate
+          sleep 5
+          # Set package visibility to public so docker pull works without login
+          curl -s -X PATCH \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/user/packages/container/${{ github.event.repository.name }}/visibility" \
+            -d '{"visibility":"public"}' || echo "Package visibility update skipped (may not exist yet)"
+
   # ==========================================
-  # Job 2: Deploy to STB via SSH
+  # Job 2: Deploy to STB via SSH (optional)
+  # Only runs if STB secrets are configured
   # ==========================================
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && secrets.STB_HOST != ''
     environment: production
 
     steps:
@@ -89,35 +102,29 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.STB_HOST }}
-          username: ${{ secrets.STB_USER }}
+          username: ${{ secrets.STB_USER || 'root' }}
           key: ${{ secrets.STB_SSH_KEY }}
           port: ${{ secrets.STB_PORT || 22 }}
           script: |
             echo "🚀 Deploying Razkindo ERP to STB..."
-            
-            # Navigate to project directory
+
             cd /opt/erpstb || mkdir -p /opt/erpstb && cd /opt/erpstb
-            
+
             # Download latest docker-compose if not present
             if [ ! -f docker-compose.yml ]; then
               curl -sL https://raw.githubusercontent.com/henryarthanto/erpstb/main/docker-compose.yml -o docker-compose.yml
             fi
-            
-            # Login to GHCR
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
-            # Pull latest image
+
+            # Pull latest image (public, no login needed)
             docker pull ghcr.io/henryarthanto/erpstb:latest
-            
-            # Stop existing container
+
+            # Restart container
             docker-compose down 2>/dev/null || true
-            
-            # Start new container
             docker-compose up -d
-            
-            # Cleanup old images
+
+            # Cleanup
             docker image prune -f
-            
+
             # Health check
             echo "⏳ Waiting for health check..."
             sleep 10
@@ -129,28 +136,6 @@ jobs:
               echo "  Waiting... ($i/12)"
               sleep 5
             done
-            
-            echo "⚠️ Health check timeout, but container is running"
-            docker logs razkindo-erp --tail 20
-            
-  # ==========================================
-  # Job 3: Notify Deployment Status
-  # ==========================================
-  notify:
-    needs: [build, deploy]
-    runs-on: ubuntu-latest
-    if: always()
 
-    steps:
-      - name: Deployment Status
-        run: |
-          if [ "${{ needs.deploy.result }}" == "success" ]; then
-            echo "✅ Deployment to STB successful!"
-            echo "Image: ghcr.io/henryarthanto/erpstb:latest"
-            echo "Commit: ${{ github.sha }}"
-          elif [ "${{ needs.deploy.result }}" == "failure" ]; then
-            echo "❌ Deployment failed!"
-            exit 1
-          else
-            echo "⏭️ Deployment skipped (build may have failed)"
-          fi
+            echo "⚠️ Health check timeout"
+            docker logs razkindo-erp --tail 20
