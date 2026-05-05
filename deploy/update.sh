@@ -15,7 +15,7 @@ cd "$DEPLOY_DIR"
 
 # Pull latest image
 echo "📦 Pulling latest image..."
-docker pull ghcr.io/henryarthanto/erpstb:latest
+docker pull ghcr.io/henryarthanto/razkindo-erp:latest
 
 # Restart with new image
 echo "🔄 Restarting container..."

@@ -15,7 +15,7 @@ echo "⏰ Setting up cron jobs for Razkindo ERP STB..."
 (crontab -l 2>/dev/null | grep -v "healthcheck.sh"; echo "*/2 * * * * $SCRIPT_DIR/healthcheck.sh >> /var/log/erp-healthcheck.log 2>&1") | crontab -
 
 # Auto-update check daily at 3 AM
-(crontab -l 2>/dev/null | grep -v "auto-update"; echo "0 3 * * * cd /opt/erpstb && docker pull ghcr.io/henryarthanto/erpstb:latest && docker-compose up -d >> /var/log/erp-auto-update.log 2>&1") | crontab -
+(crontab -l 2>/dev/null | grep -v "auto-update"; echo "0 3 * * * cd /opt/erpstb && docker pull ghcr.io/henryarthanto/razkindo-erp:latest && docker-compose up -d >> /var/log/erp-auto-update.log 2>&1") | crontab -
 
 # Docker image cleanup weekly (Sunday at 4 AM)
 (crontab -l 2>/dev/null | grep -v "docker image prune"; echo "0 4 * * 0 docker image prune -af >> /var/log/erp-cleanup.log 2>&1") | crontab -

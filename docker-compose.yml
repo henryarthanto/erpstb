@@ -5,7 +5,7 @@
 
 services:
   erp:
-    image: ghcr.io/henryarthanto/erpstb:latest
+    image: ghcr.io/henryarthanto/razkindo-erp:latest
     container_name: razkindo-erp
     restart: unless-stopped
     ports:
