@@ -1,39 +1,28 @@
-# --- Build Stage ---
-FROM node:20-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
+# --- Stage 1: Install dependencies ---
+FROM oven/bun:1-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package.json bun.lock* package-lock.json* ./
-RUN \
-  if [ -f bun.lock ]; then \
-    npm install -g bun && bun install --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then \
-    npm ci; \
-  else \
-    npm i; \
-  fi
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
-# --- Build Stage ---
-FROM base AS builder
+# --- Stage 2: Build ---
+FROM oven/bun:1-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Generate Prisma client
-RUN npx prisma generate
+RUN bunx prisma generate
 
-# Next.js collects anonymous telemetry data
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build Next.js standalone
-RUN npm run build
+RUN bun run build
 
-# --- Production Stage ---
-FROM base AS runner
+# --- Stage 3: Production ---
+FROM oven/bun:1-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
