@@ -436,3 +436,48 @@ Stage Summary:
 - ALL nested relation queries across the codebase now generate correct Prisma structures
 - PWA order items with product data will now load correctly
 - File modified: src/lib/supabase.ts (parseSelectString function)
+---
+Task ID: 4
+Agent: Main
+Task: Fix products, stock, penugasan not showing — complete rewrite of parseSelectString
+
+Work Log:
+- User reported: "produk dan stok tidak muncul penugasan juga tidak muncul"
+- Dev log showed PrismaClientValidationError on: products, sales_tasks, user_units, payments, customers, transactions
+- Root cause: Previous fixes to parseSelectString introduced new bugs:
+
+**Bug 1: Prisma doesn't allow `select` + `include` at the same level**
+- Code generated: `{ select: { userId: true }, include: { unit: true } }` 
+- Prisma error: "Please either use `include` or `select`, but not both at the same time"
+- This affected: user_units, and any query with scalar fields + bare relations
+
+**Bug 2: Prisma doesn't allow bare relation names inside nested objects**
+- Code generated: `{ include: { unitProducts: { unit: true } } }`
+- Prisma error: "Unknown argument `unit`. Did you mean `skip`?"
+- Must be: `{ include: { unitProducts: { include: { unit: true } } } }`
+- Relations MUST be inside `select` or `include` at EVERY nesting level
+
+**Bug 3: PWA products route used invalid select pattern**
+- `transaction_items(transactionItem(*))` → invalid, not a recognized pattern
+- Fixed to: `items:transaction_items(*)`
+
+**Complete rewrite of parseSelectString approach:**
+- Added `buildNestedConfig()` helper that correctly wraps relations in `select` or `include`
+- `*` → `true` (Prisma shorthand for include all)
+- Scalar fields only → `{ select: { ... } }`
+- Relations only → `{ include: { ... } }`
+- Scalar + relations → `{ select: { ...scalars, ...relations } }` (all in one select)
+- Top-level executeSelect simplified: use `query.select` when scalar fields exist (put relations inside), `query.include` when only relations
+- This handles ALL PostgREST patterns: `(*, nested:table(*))`, `(id, name, rel:tbl(id))`, etc.
+
+**Verification:**
+- All 6 test patterns produce valid Prisma structures
+- Dev log: zero Prisma errors after fix
+- All endpoints return 200: transactions, products, user_units, payments, events, settings
+- Lint clean (only pre-existing keep-alive.js errors)
+
+Stage Summary:
+- Products, stock, penugasan (sales-tasks), user_units, payments, customers ALL working again
+- Complete rewrite of parseSelectString with buildNestedConfig helper ensures correctness
+- Prisma rules (no select+include together, relations must be in select/include) properly enforced
+- Files modified: src/lib/supabase.ts (parseSelectString + buildNestedConfig + executeSelect), src/app/api/pwa/[code]/products/route.ts

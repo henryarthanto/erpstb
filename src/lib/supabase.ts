@@ -197,6 +197,49 @@ interface SelectOptions {
 }
 
 /**
+ * Build a Prisma-compatible config object for a nested relation's fields.
+ *
+ * PostgREST examples and their Prisma equivalents:
+ *   - '*'                       → true (include all fields)
+ *   - 'id, name'                → { select: { id: true, name: true } }
+ *   - '*, relation:other(*)'    → { include: { relation: true } }
+ *   - 'id, relation:other(*)'   → { select: { id: true, relation: { include: { ... } } } }
+ *   - 'id, name, rel:tbl(id)'   → { select: { id: true, name: true, rel: { select: { id: true } } } }
+ *
+ * KEY PRISMA RULE: Relations MUST be inside `select` or `include` at every nesting level.
+ * { relation: true } is ONLY valid at the top-level of `select` or `include`.
+ */
+function buildNestedConfig(fieldsStr: string): Record<string, any> | true {
+  if (fieldsStr.trim() === '*') {
+    return true; // Include all fields — Prisma shorthand
+  }
+
+  const nestedParse = parseSelectString(fieldsStr);
+  const hasScalarFields = nestedParse.selectFields && Object.keys(nestedParse.selectFields).length > 0;
+  const hasRelations = nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0;
+
+  if (hasScalarFields && hasRelations) {
+    // Mix of scalar fields + relations → use select, put relations inside it
+    return {
+      select: {
+        ...nestedParse.selectFields,
+        ...nestedParse.includeConfig,
+      },
+    };
+  } else if (hasScalarFields) {
+    // Only scalar fields → use select
+    return { select: nestedParse.selectFields };
+  } else if (hasRelations) {
+    // Only relations (no scalar fields, e.g. '*, relation:other(*)' but * was stripped)
+    // → use include for the relations
+    return { include: nestedParse.includeConfig };
+  }
+
+  // Fallback — shouldn't happen
+  return true;
+}
+
+/**
  * Parse a PostgREST select string like '*, related:related_table(*)'
  * into Prisma include/select config.
  */
@@ -219,8 +262,7 @@ function parseSelectString(selectStr: string): {
     const trimmed = part.trim();
 
     // Check for embedded relation: 'alias:table_name!fkey(fields)' or 'alias:table_name(fields)'
-    // CRITICAL FIX: Handle nested parentheses like 'items:transaction_items(*, product:products(*))'
-    // Use findMatchingParens to extract the outermost (...) content correctly.
+    // Handle nested parentheses like 'items:transaction_items(*, product:products(*))'
     const colonIdx = trimmed.indexOf(':');
     if (colonIdx > 0) {
       const alias = trimmed.substring(0, colonIdx);
@@ -231,60 +273,23 @@ function parseSelectString(selectStr: string): {
         const nestedFields = parenResult.inside.trim();
         const modelName = TABLE_TO_MODEL[tablePart];
         if (modelName && /^[\w]+$/.test(alias)) {
-          const nestedParse = parseSelectString(nestedFields || '*');
-          const nestedInclude: Record<string, any> = {};
-          const hasScalarFields = nestedParse.selectFields && Object.keys(nestedParse.selectFields).length > 0;
-          if (hasScalarFields) {
-            nestedInclude.select = { ...nestedParse.selectFields };
-          }
-          if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
-            if (nestedInclude.select) {
-              // Has scalar fields → merge relations INTO select (Prisma requires relations inside select)
-              Object.assign(nestedInclude.select, nestedParse.includeConfig);
-            } else {
-              // No scalar fields (e.g. '*') → spread relations directly (include mode, auto-includes all scalars)
-              Object.assign(nestedInclude, nestedParse.includeConfig);
-            }
-          }
+          const nestedConfig = buildNestedConfig(nestedFields || '*');
           const includeKey = snakeToCamel(alias);
-          if (Object.keys(nestedInclude).length === 0) {
-            includeConfig[includeKey] = true;
-          } else {
-            includeConfig[includeKey] = nestedInclude;
-          }
+          includeConfig[includeKey] = nestedConfig;
         }
         continue;
       }
     }
 
     // Check for direct relation: 'table_name!fkey(fields)' or 'table_name(fields)'
-    // CRITICAL FIX: Also handle nested parentheses properly.
     const parenResult = findMatchingParens(trimmed);
     if (parenResult) {
       const tablePart = parenResult.before.replace(/![\w.]+$/, '').trim();
       const nestedFields = parenResult.inside.trim();
       const modelName = TABLE_TO_MODEL[tablePart];
       if (modelName && /^[\w]+$/.test(tablePart)) {
-        if (nestedFields.trim() === '*') {
-          includeConfig[modelName] = true;
-        } else {
-          const nestedParse = parseSelectString(nestedFields);
-          const nestedInclude: Record<string, any> = {};
-          const hasScalarFields = nestedParse.selectFields && Object.keys(nestedParse.selectFields).length > 0;
-          if (hasScalarFields) {
-            nestedInclude.select = { ...nestedParse.selectFields };
-          }
-          if (nestedParse.includeConfig && Object.keys(nestedParse.includeConfig).length > 0) {
-            if (nestedInclude.select) {
-              // Has scalar fields → merge relations INTO select (Prisma requires relations inside select)
-              Object.assign(nestedInclude.select, nestedParse.includeConfig);
-            } else {
-              // No scalar fields → spread relations directly (include mode, auto-includes all scalars)
-              Object.assign(nestedInclude, nestedParse.includeConfig);
-            }
-          }
-          includeConfig[modelName] = Object.keys(nestedInclude).length > 0 ? nestedInclude : true;
-        }
+        const nestedConfig = buildNestedConfig(nestedFields);
+        includeConfig[modelName] = nestedConfig;
       }
       continue;
     }
@@ -601,23 +606,14 @@ class PostgrestQueryBuilder {
     // Build the Prisma query
     const query: Record<string, any> = { where };
 
+    // CRITICAL PRISMA RULE: Cannot use both `select` and `include` at the same time.
+    // When scalar fields are selected, ALL relations must be inside `select` too.
+    // Only when there are NO scalar fields can we use `include` for relations.
     if (this.selectFields && Object.keys(this.selectFields).length > 0) {
       query.select = { ...this.selectFields };
       if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
-        // Split: relations with explicit selects go into query.select, relations with 'true' go into query.include
-        const selectRelations: Record<string, any> = {};
-        const includeRelations: Record<string, any> = {};
-        for (const [key, val] of Object.entries(this.includeConfig)) {
-          if (val === true) {
-            includeRelations[key] = true;  // bare include — put in query.include
-          } else {
-            selectRelations[key] = val;    // has select/include config — put in query.select
-          }
-        }
-        Object.assign(query.select, selectRelations);
-        if (Object.keys(includeRelations).length > 0) {
-          query.include = includeRelations;
-        }
+        // All relations go INTO query.select (Prisma rule: no select + include together)
+        Object.assign(query.select, this.includeConfig);
       }
     } else if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
       query.include = this.includeConfig;

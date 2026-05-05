@@ -115,7 +115,7 @@ async function fetchPwaProducts(customerId: string, unitId: string): Promise<Pro
   ] = await Promise.all([
     db
       .from('transactions')
-      .select('transaction_items(transactionItem(*))')
+      .select('items:transaction_items(*)')
       .eq('customer_id', customerId)
       .eq('type', 'sale')
       .neq('status', 'cancelled'),
@@ -144,12 +144,10 @@ async function fetchPwaProducts(customerId: string, unitId: string): Promise<Pro
   const transactions = purchaseHistoryResult.data;
   if (Array.isArray(transactions)) {
     for (const tx of transactions) {
-      // Handle nested transaction_items from Prisma include
-      const items = (tx as any).transaction_items;
+      const items = (tx as any).items || (tx as any).transaction_items;
       if (!Array.isArray(items)) continue;
       for (const wrapper of items) {
-        // Prisma includes return the related model, could be nested
-        const item = wrapper?.transactionItem || wrapper;
+        const item = wrapper || wrapper?.transactionItem;
         if (!item) continue;
         const pid = item.productId || item.product_id;
         if (!pid) continue;
