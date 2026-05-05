@@ -933,16 +933,19 @@ const dbClient = {
   },
 
   async rpc(fnName: string, params: Record<string, any> = {}): Promise<PostgrestResult> {
-    // RPC stub — PostgreSQL functions will be reimplemented with Prisma transactions
-    console.warn(`[SupabaseWrapper] RPC "${fnName}" called — not yet reimplemented for MariaDB`);
-    return {
-      data: null,
-      error: {
-        message: `RPC function "${fnName}" is not yet reimplemented for MariaDB. Will be replaced with Prisma transactions.`,
-        code: 'PGRST301',
-      },
-      count: null,
-    };
+    // Delegate to Prisma-based RPC implementations
+    const { rpcHandlers } = await import('./rpc-impl');
+    const handler = rpcHandlers[fnName];
+    if (!handler) {
+      console.warn(`[SupabaseWrapper] Unknown RPC: ${fnName}`);
+      return {
+        data: null,
+        error: { message: `Unknown RPC function: ${fnName}`, code: 'PGRST301' },
+        count: null,
+      };
+    }
+    const result = await handler(params);
+    return { ...result, count: null };
   },
 
   // Auth/Storage/Realtime stubs (for backward compatibility)

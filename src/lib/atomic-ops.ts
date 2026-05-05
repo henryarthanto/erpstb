@@ -127,7 +127,7 @@ export async function atomicDecrementStock(
 ): Promise<{ newStock: number }> {
   return await prisma.$transaction(async (tx) => {
     const product = await (tx as any).product.findUnique({
-      where: { id },
+      where: { id: productId },
       select: { globalStock: true },
     });
 
@@ -144,7 +144,7 @@ export async function atomicDecrementStock(
 
     const newStock = currentStock - qty;
     await (tx as any).product.update({
-      where: { id },
+      where: { id: productId },
       data: { globalStock: newStock },
     });
 
