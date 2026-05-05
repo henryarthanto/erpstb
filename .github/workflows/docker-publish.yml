@@ -1,32 +1,20 @@
 # ============================================================
 # Razkindo ERP STB - CI/CD Pipeline
-# Builds multi-arch Docker image → pushes to GHCR → auto-deploy to STB
+# Builds multi-arch Docker image → pushes to GHCR
 # ============================================================
 
-name: CI/CD - Build & Deploy to STB
+name: CI/CD - Build & Push Docker Image
 
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
   workflow_dispatch:
-    inputs:
-      deploy_tag:
-        description: 'Tag to deploy (e.g., v1.2.0)'
-        required: false
-        default: ''
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ==========================================
-  # Job 1: Build & Push Docker Image to GHCR
-  # ==========================================
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -61,8 +49,6 @@ jobs:
             type=sha,prefix=
             type=ref,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
@@ -78,64 +64,9 @@ jobs:
       - name: Make package public
         if: success()
         run: |
-          # Wait for registry to propagate
           sleep 5
-          # Set package visibility to public so docker pull works without login
           curl -s -X PATCH \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/user/packages/container/${{ github.event.repository.name }}/visibility" \
-            -d '{"visibility":"public"}' || echo "Package visibility update skipped (may not exist yet)"
-
-  # ==========================================
-  # Job 2: Deploy to STB via SSH (optional)
-  # Only runs if STB secrets are configured
-  # ==========================================
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && secrets.STB_HOST != ''
-    environment: production
-
-    steps:
-      - name: Deploy to STB via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.STB_HOST }}
-          username: ${{ secrets.STB_USER || 'root' }}
-          key: ${{ secrets.STB_SSH_KEY }}
-          port: ${{ secrets.STB_PORT || 22 }}
-          script: |
-            echo "🚀 Deploying Razkindo ERP to STB..."
-
-            cd /opt/erpstb || mkdir -p /opt/erpstb && cd /opt/erpstb
-
-            # Download latest docker-compose if not present
-            if [ ! -f docker-compose.yml ]; then
-              curl -sL https://raw.githubusercontent.com/henryarthanto/erpstb/main/docker-compose.yml -o docker-compose.yml
-            fi
-
-            # Pull latest image (public, no login needed)
-            docker pull ghcr.io/henryarthanto/erpstb:latest
-
-            # Restart container
-            docker-compose down 2>/dev/null || true
-            docker-compose up -d
-
-            # Cleanup
-            docker image prune -f
-
-            # Health check
-            echo "⏳ Waiting for health check..."
-            sleep 10
-            for i in $(seq 1 12); do
-              if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
-                echo "✅ ERP is healthy and running!"
-                exit 0
-              fi
-              echo "  Waiting... ($i/12)"
-              sleep 5
-            done
-
-            echo "⚠️ Health check timeout"
-            docker logs razkindo-erp --tail 20
+            -d '{"visibility":"public"}' || echo "Visibility update skipped"
