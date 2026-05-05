@@ -69,15 +69,41 @@ function PWAOrderApprovalDialog({
     (c.userUnits || []).some((u: any) => u.id === txUnitId)
   );
 
-  // Compute default prices from product selling_price (memoized)
+  // Fetch deal prices for this customer
+  const { data: dealPricesData } = useQuery({
+    queryKey: ['customer-deal-prices', transaction.customerId],
+    queryFn: async () => {
+      if (!transaction.customerId) return { prices: [] };
+      const res = await apiFetch<any>(`/api/customer-prices?customerId=${transaction.customerId}`);
+      return res;
+    },
+    enabled: open && !!transaction.customerId,
+    staleTime: 60_000,
+  });
+  const dealPrices = React.useMemo(() => {
+    const map: Record<string, number> = {};
+    (Array.isArray(dealPricesData?.prices) ? dealPricesData.prices : []).forEach((dp: any) => {
+      if (dp.isActive && dp.productId && dp.dealPrice > 0) {
+        map[dp.productId] = Number(dp.dealPrice);
+      }
+    });
+    return map;
+  }, [dealPricesData]);
+
+  // Compute default prices: deal price > product selling_price > empty
   const defaultPrices: Record<string, string> = React.useMemo(() => {
     const initial: Record<string, string> = {};
     items.forEach((item: any) => {
-      const product = allProducts.find((p: any) => p.id === item.productId);
-      initial[item.id] = product?.sellingPrice ? String(product.sellingPrice) : '';
+      // Check deal price first
+      if (dealPrices[item.productId] && dealPrices[item.productId] > 0) {
+        initial[item.id] = String(dealPrices[item.productId]);
+      } else {
+        const product = allProducts.find((p: any) => p.id === item.productId);
+        initial[item.id] = product?.sellingPrice ? String(product.sellingPrice) : '';
+      }
     });
     return initial;
-  }, [allProducts, items]);
+  }, [allProducts, items, dealPrices]);
 
   // Effective prices: user overrides take precedence over defaults
   const prices: Record<string, string> = React.useMemo(() => {
@@ -478,7 +504,7 @@ export default function TransactionsModule() {
   const { data: productsData } = useQuery({
     queryKey: ['products'],
     queryFn: () => apiFetch<any>('/api/products'),
-    enabled: showSaleForm,
+    enabled: showSaleForm || !!pwaOrderForApproval,
     staleTime: 120_000,
   });
 
