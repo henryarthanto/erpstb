@@ -90,14 +90,20 @@ function PWAOrderApprovalDialog({
     return map;
   }, [dealPricesData]);
 
-  // Compute default prices: deal price > product selling_price > empty
+  // Compute default prices: deal price > item.product.sellingPrice > allProducts.sellingPrice > empty
   const defaultPrices: Record<string, string> = React.useMemo(() => {
     const initial: Record<string, string> = {};
     items.forEach((item: any) => {
-      // Check deal price first
+      // Priority 1: deal price from customer_prices
       if (dealPrices[item.productId] && dealPrices[item.productId] > 0) {
         initial[item.id] = String(dealPrices[item.productId]);
-      } else {
+      }
+      // Priority 2: selling_price from item's product relation (from transaction API)
+      else if (item.product?.sellingPrice) {
+        initial[item.id] = String(item.product.sellingPrice);
+      }
+      // Priority 3: selling_price from allProducts (from /api/products)
+      else {
         const product = allProducts.find((p: any) => p.id === item.productId);
         initial[item.id] = product?.sellingPrice ? String(product.sellingPrice) : '';
       }
@@ -256,10 +262,10 @@ function PWAOrderApprovalDialog({
               </Label>
               <div className="space-y-2">
                 {items.map((item: any) => {
-                  const product = allProducts.find((p: any) => p.id === item.productId);
+                  const product = item.product || allProducts.find((p: any) => p.id === item.productId);
                   const priceVal = parseFloat(prices[item.id]) || 0;
                   const subtotal = priceVal * item.qty;
-                  const unitLabel = product?.unit || item.product?.unit || 'pcs';
+                  const unitLabel = product?.unit || 'pcs';
                   const hasDealPrice = dealPrices[item.productId] && dealPrices[item.productId] > 0;
 
                   return (

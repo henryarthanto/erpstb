@@ -305,3 +305,22 @@ Stage Summary:
 - Products load when dialog opens (no need to open sale form first)
 - Deal prices from previous orders are shown and pre-filled
 - Files modified: src/components/erp/TransactionsModule.tsx, src/app/api/customer-prices/route.ts (new)
+
+---
+Task ID: 14
+Agent: Main
+Task: Fix "Set Harga" dialog empty — products not loading
+
+Work Log:
+- User reported cannot set prices for yana shop PWA order in Transactions module
+- Root cause: `PWAOrderApprovalDialog` depended on `allProducts` from a shared products query with `staleTime: 120_000`
+- When dialog opened, products query was either cached empty or hadn't fetched yet → price fields empty → approve button disabled
+- Fix 1: Added `selling_price, sell_price_per_sub_unit, avg_hpp, id, name` to `product:products(...)` select in `LIST_SELECT` in transactions API
+- Fix 2: Changed dialog price priority to: deal price → `item.product.sellingPrice` (from transaction data) → `allProducts` fallback
+- Fix 3: Changed product lookup in item rendering to prefer `item.product` (already in transaction data) over `allProducts.find()`
+- Now dialog works even without the separate products query loading — transaction data has all needed product info
+- Lint clean, server compiles without errors
+
+Stage Summary:
+- "Set Harga" dialog now always has product prices available from transaction data (no external dependency)
+- Files modified: src/app/api/transactions/route.ts, src/components/erp/TransactionsModule.tsx

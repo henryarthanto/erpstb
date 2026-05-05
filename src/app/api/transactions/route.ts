@@ -25,7 +25,7 @@ const LIST_SELECT = `
   created_by:users!created_by_id(id, name, role, avatar),
   courier:users!courier_id(id, name, role),
   customer:customers(id, name, phone, code, distance),
-  items:transaction_items(id, product_id, product_name, qty, qty_in_sub_unit, qty_unit_type, price, hpp, subtotal, profit, product:products(unit, subUnit, conversionRate)),
+  items:transaction_items(id, product_id, product_name, qty, qty_in_sub_unit, qty_unit_type, price, hpp, subtotal, profit, product:products(id, name, selling_price, sell_price_per_sub_unit, avg_hpp, unit, subUnit, conversionRate)),
   payments:payments(id, amount, payment_method, paid_at, bank_name, account_no, reference_no, hpp_portion, profit_portion, received_by:users!received_by_id(id, name))
 `;
 
