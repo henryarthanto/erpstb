@@ -40,10 +40,10 @@ export async function GET(request: NextRequest) {
     } else {
       if (assignedToId) query = query.eq('assigned_to_id', assignedToId);
     }
-    if (status) {
+    if (status && status !== 'all') {
       query = query.eq('status', status);
     } else {
-      // By default, exclude lost/inactive customers unless specifically requested
+      // By default (no status or status=all), exclude lost customers
       query = query.neq('status', 'lost');
     }
 

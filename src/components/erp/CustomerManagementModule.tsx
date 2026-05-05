@@ -458,7 +458,7 @@ export default function CustomerManagementModule() {
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [generatingCodeFor, setGeneratingCodeFor] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState('active');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [showLostCustomers, setShowLostCustomers] = useState(false);
 
   // ---- Monitoring Tab State ----
