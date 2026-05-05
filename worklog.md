@@ -101,3 +101,22 @@ Stage Summary:
 - Product CRUD now accessible to `super_admin`, `keuangan`, and `gudang` roles (matching API permissions)
 - Delete restricted to `super_admin` only (matching backend)
 - File modified: src/components/erp/ProductsModule.tsx
+
+---
+Task ID: 5
+Agent: Main
+Task: Fix "tidak bisa membuat produk baru" — subUnit column mismatch
+
+Work Log:
+- User sent screenshot showing error: `The column 'subUnit' does not exist in the current database`
+- Checked Prisma schema vs actual PostgreSQL database columns
+- Database has `sub_unit` (snake_case) but Prisma schema had `subUnit` WITHOUT `@map("sub_unit")` directive
+- Added `@map("sub_unit")` to `subUnit` field in prisma/schema.prisma line 139
+- Regenerated Prisma client (`npx prisma generate`)
+- Verified fix works by querying `product.findFirst({ select: { subUnit: true } })` — returns data correctly
+- Restarted dev server with correct DATABASE_URL
+
+Stage Summary:
+- Root cause: Missing `@map("sub_unit")` on Prisma field `subUnit` in Product model
+- Fix: Added `@map("sub_unit")` to align Prisma camelCase field with PostgreSQL snake_case column
+- File modified: prisma/schema.prisma (line 139)

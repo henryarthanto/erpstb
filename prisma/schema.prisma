@@ -136,7 +136,7 @@ model Product {
   description         String?
   category            String?
   unit                String?  // kg, pcs, box (main unit)
-  subUnit             String?  // pack, pcs, etc (sub unit within main unit)
+  subUnit             String?  @map("sub_unit") // pack, pcs, etc (sub unit within main unit)
   conversionRate      Decimal  @default(1) @db.Decimal(15,2)  // how many subUnits per 1 main unit (e.g., 10 means 1 box = 10 pack)
   globalStock         Decimal  @default(0) @db.Decimal(15,3) @map("global_stock") // stored in smallest unit (subUnit)
   avgHpp              Decimal  @default(0) @db.Decimal(15,2) @map("avg_hpp") // Cost price (HPP) per subUnit
