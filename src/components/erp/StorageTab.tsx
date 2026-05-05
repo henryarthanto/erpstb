@@ -41,6 +41,8 @@ import {
   Zap,
   Wifi,
   WifiOff,
+  Cloud,
+  Globe,
 } from 'lucide-react';
 import CircularGauge from './CircularGauge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -86,6 +88,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   const [dbMonitorData, setDbMonitorData] = useState<any>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  const [supabaseLatency, setSupabaseLatency] = useState<number | null>(null);
 
   useEffect(() => {
     const socket = io('/?XTransformPort=3004', {
@@ -108,7 +111,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
       setWsConnected(false);
     });
 
-    socket.on('monitor:data', (data: { systemStats: any; pgStats: any; timestamp: string }) => {
+    socket.on('monitor:data', (data: { systemStats: any; pgStats: any; supabaseRestLatencyMs?: number; timestamp: string }) => {
       if (data.systemStats) {
         // Map WebSocket system stats to the shape the UI expects
         const s = data.systemStats;
@@ -194,6 +197,10 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
           timestamp: data.timestamp,
         });
       }
+      // Supabase REST API latency (STB → AWS)
+      if (data.supabaseRestLatencyMs != null) {
+        setSupabaseLatency(data.supabaseRestLatencyMs);
+      }
     });
 
     socket.on('connect_error', (err) => {
@@ -234,6 +241,19 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
     refetchInterval: 60000,
     retry: 1,
     staleTime: 60_000,
+  });
+
+  // Supabase Storage & AWS info (refresh every 30s)
+  const { data: supabaseInfo } = useQuery({
+    queryKey: ['supabase-info'],
+    queryFn: async () => {
+      const json = await apiFetch<{ success: boolean; data: any; error?: string }>('/api/storage/supabase-info');
+      if (!json.success) throw new Error(json.error);
+      return json.data;
+    },
+    refetchInterval: 30000,
+    retry: 1,
+    staleTime: 30_000,
   });
 
   // Merge static DB size data into WebSocket dbMonitorData
@@ -833,14 +853,14 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
         </CardContent>
       </Card>
 
-      {/* PostgreSQL Realtime Monitor */}
+      {/* ═══ Supabase Storage & AWS Server Monitor ═══ */}
       <Card className="border-violet-500/30">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
               <CardTitle className="text-base flex items-center gap-2">
-                <Database className="w-4 h-4 text-violet-500" />
-                PostgreSQL Realtime Monitor
+                <Cloud className="w-4 h-4 text-violet-500" />
+                Supabase Storage & AWS Server
                 {wsConnected ? (
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -853,7 +873,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                   </span>
                 )}
               </CardTitle>
-              <CardDescription>Realtime monitoring PostgreSQL via WebSocket</CardDescription>
+              <CardDescription>Monitoring Supabase Storage, AWS Server & Latensi Realtime</CardDescription>
             </div>
             <Badge variant="outline" className={cn("shrink-0 text-[10px]", wsConnected ? "border-emerald-300 text-emerald-600" : "border-red-300 text-red-600")}>
               <Wifi className="w-3 h-3 mr-1" /> WS {wsConnected ? '✓' : '✗'}
@@ -861,135 +881,145 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          {!mergedDbMonitor ? (
-            <div className="flex items-center justify-center py-6 text-muted-foreground">
-              <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-              <span className="text-sm">Mengambil info database...</span>
+          {/* ── Project & AWS Info ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 text-center">
+              <p className="text-[10px] text-muted-foreground">Supabase Project</p>
+              <p className="font-bold text-sm font-mono text-violet-600 truncate">{supabaseInfo?.project?.ref?.slice(0, 12) || '-'}</p>
             </div>
-          ) : dbQuota ? (
+            <div className="p-3 rounded-lg bg-muted/50 border text-center">
+              <p className="text-[10px] text-muted-foreground">AWS Region</p>
+              <p className="font-bold text-sm">{supabaseInfo?.project?.region || '-'}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50 border text-center">
+              <p className="text-[10px] text-muted-foreground">DB Terpakai</p>
+              <p className="font-bold text-sm text-violet-500">{dbQuota?.sizePretty || mergedDbMonitor ? (dbQuota?.sizePretty || '—') : <RefreshCw className="w-3 h-3 animate-spin mx-auto" />}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50 border text-center">
+              <p className="text-[10px] text-muted-foreground">DB Uptime</p>
+              <p className="font-bold text-sm">{supabaseInfo?.database?.uptime || serverInfo?.uptime || '-'}</p>
+            </div>
+          </div>
+
+          {/* ── AWS Server Detail ── */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-orange-500" />
+              <p className="text-sm font-medium">AWS Server</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="p-2.5 rounded-lg border flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Endpoint</span>
+                <span className="font-mono text-xs truncate max-w-[140px]">{supabaseInfo?.aws?.endpoint || '-'}</span>
+              </div>
+              <div className="p-2.5 rounded-lg border flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">DB Host</span>
+                <span className="font-mono text-xs truncate max-w-[140px]">{supabaseInfo?.aws?.databaseHost || '-'}</span>
+              </div>
+              <div className="p-2.5 rounded-lg border flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Port / DB</span>
+                <span className="font-mono text-xs">{supabaseInfo?.aws?.databasePort || '-'} / {supabaseInfo?.aws?.databaseName || '-'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Latensi Realtime (DB + API) ── */}
+          <div className="border-t" />
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-sky-500" />
+              <p className="text-sm font-medium">Latensi Realtime</p>
+              {wsConnected && (
+                <span className="text-[10px] text-muted-foreground ml-auto">
+                  Update setiap 3 detik
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
+              <CircularGauge
+                value={Math.min((dbLatency?.dbLatencyMs || 0) / 5, 100)}
+                label="DB Latency"
+                detail={`${dbLatency?.dbLatencyMs ?? '...'} ms`}
+                size={100}
+                strokeWidth={7}
+                thresholds={[20, 60]}
+                invertColors={true}
+                icon={<Database className="w-3.5 h-3.5 text-violet-500" />}
+              />
+              <CircularGauge
+                value={Math.min((supabaseLatency || 0) / 5, 100)}
+                label="API Latency"
+                detail={`${supabaseLatency ?? '...'} ms`}
+                size={100}
+                strokeWidth={7}
+                thresholds={[20, 60]}
+                invertColors={true}
+                icon={<Cloud className="w-3.5 h-3.5 text-sky-500" />}
+              />
+              <div className="flex flex-col items-center justify-center p-3 rounded-lg border min-w-[90px]">
+                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center mb-1">
+                  <Server className="w-3.5 h-3.5 text-teal-500" />
+                </div>
+                <p className="text-[10px] text-muted-foreground">Koneksi DB</p>
+                <p className="text-lg font-bold">{dbConnections?.current || 0}</p>
+                <p className="text-[10px] text-muted-foreground">/ {dbConnections?.maxAllowed || 100}</p>
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-[10px] text-muted-foreground">
+                DB = STB → PostgreSQL &nbsp;|&nbsp; API = STB → Supabase REST (AWS)
+              </p>
+            </div>
+          </div>
+
+          {/* ── Supabase Storage Buckets ── */}
+          {supabaseInfo?.storage?.buckets && supabaseInfo.storage.buckets.length > 0 && (
             <>
-              {/* Database Size */}
+              <div className="border-t" />
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-md bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
-                      <Database className="w-4 h-4 text-violet-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Database</p>
-                      <p className="text-xs text-muted-foreground">{dbQuota.engine || 'PostgreSQL'}</p>
-                    </div>
+                    <HardDrive className="w-4 h-4 text-emerald-500" />
+                    <p className="text-sm font-medium">Storage Buckets</p>
                   </div>
-                  <Badge variant="outline" className="border-violet-300 text-violet-700 dark:text-violet-400 shrink-0">
-                    {dbQuota.sizePretty}
+                  <Badge variant="outline" className="text-xs">
+                    Total: {supabaseInfo.storage.totalPretty}
                   </Badge>
                 </div>
-
-                {/* Index Size */}
-                {indexes && (
-                  <div className="flex items-center gap-3 p-2.5 bg-muted/50 rounded-lg border text-sm">
-                    <div className="w-7 h-7 rounded-md bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center">
-                      <BarChart3 className="w-3.5 h-3.5 text-sky-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs text-muted-foreground">Total Index</p>
-                      <p className="font-semibold text-sm">{indexes.sizePretty}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Summary Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-lg bg-muted/50 border text-center">
-                    <p className="text-xs text-muted-foreground">DB Terpakai</p>
-                    <p className="font-bold text-sm text-violet-500">{dbQuota.sizePretty}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50 border text-center">
-                    <p className="text-xs text-muted-foreground">Total Index</p>
-                    <p className="font-bold text-sm">{indexes?.sizePretty || '-'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50 border text-center">
-                    <p className="text-xs text-muted-foreground">PostgreSQL</p>
-                    <p className="font-bold text-sm font-mono text-xs">{serverInfo?.dbVersion?.split('-')[0] || '-'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50 border text-center">
-                    <p className="text-xs text-muted-foreground">Uptime</p>
-                    <p className="font-bold text-sm">{serverInfo?.uptime || '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Disk Usage (if available) */}
-              {dbDisk && (
-                <>
-                  <div className="border-t" />
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <HardDrive className="w-4 h-4 text-amber-500" />
-                      <p className="text-sm font-medium">Penggunaan Disk</p>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground text-xs">{dbDisk.mountPoint || '/'}</span>
-                        <span className={cn(
-                          "font-bold text-base",
-                          dbDisk.usedPercent > 90 ? "text-red-500" : dbDisk.usedPercent > 70 ? "text-amber-500" : "text-emerald-500"
-                        )}>
-                          {dbDisk.usedPercent}%
-                        </span>
-                      </div>
-                      <div className="w-full h-5 bg-muted rounded-full overflow-hidden relative">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all duration-700",
-                            dbDisk.usedPercent > 90 ? "bg-red-500" : dbDisk.usedPercent > 70 ? "bg-amber-500" : "bg-emerald-500"
-                          )}
-                          style={{ width: `${Math.max(Math.min(dbDisk.usedPercent, 100), 2)}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Terpakai: <span className="font-semibold text-foreground">{formatBytes(dbDisk.usedBytes)}</span></span>
-                        <span>Tersedia: <span className="font-semibold text-emerald-500">{formatBytes(dbDisk.availableBytes)}</span></span>
-                        <span>Total: {formatBytes(dbDisk.totalBytes)}</span>
-                      </div>
-                    </div>
-                    {dbDisk.usedPercent > 80 && (
-                      <div className={cn(
-                        "flex items-start gap-2 p-2.5 rounded-lg text-xs",
-                        dbDisk.usedPercent > 90
-                          ? "bg-red-50 border border-red-200 text-red-700"
-                          : "bg-amber-50 border border-amber-200 text-amber-700"
-                      )}>
-                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                        <div>
-                          <p className="font-medium">
-                            {dbDisk.usedPercent > 90 ? 'Disk hampir penuh!' : 'Disk mulai penuh'}
-                          </p>
-                          <p>
-                            {dbDisk.usedPercent > 90
-                              ? 'Segera bersihkan data lama (log, event) atau tambah storage.'
-                              : 'Pertimbangkan untuk membersihkan data lama.'}
+                <div className="space-y-1.5">
+                  {supabaseInfo.storage.buckets.map((bucket: any) => (
+                    <div key={bucket.id} className="flex items-center justify-between p-2.5 border rounded-lg hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-md bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center shrink-0">
+                          <FolderOpen className="w-4 h-4 text-emerald-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{bucket.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {bucket.fileCount} file · {bucket.totalSizePretty}
                           </p>
                         </div>
                       </div>
-                    )}
-                  </div>
-                </>
-              )}
+                      <Badge variant={bucket.public ? 'default' : 'secondary'} className="text-xs shrink-0">
+                        {bucket.public ? 'Public' : 'Private'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </>
-          ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              <Database className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm font-medium">Tidak dapat membaca info database</p>
-              <p className="text-xs mt-1 text-muted-foreground max-w-sm mx-auto">
-                {wsConnected ? 'Menunggu data dari database...' : 'WebSocket tidak terhubung. Pastikan service monitor-ws berjalan.'}
-              </p>
-              {!wsConnected && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
-                  <RefreshCw className="w-3 h-3 mr-1" /> Reload
-                </Button>
-              )}
-            </div>
+          )}
+
+          {/* ── No buckets fallback ── */}
+          {supabaseInfo?.storage?.buckets && supabaseInfo.storage.buckets.length === 0 && (
+            <>
+              <div className="border-t" />
+              <div className="text-center py-4 text-muted-foreground">
+                <FolderOpen className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Belum ada storage bucket</p>
+                <p className="text-xs mt-1">Supabase Storage belum digunakan</p>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

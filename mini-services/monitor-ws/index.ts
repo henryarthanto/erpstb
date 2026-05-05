@@ -316,11 +316,23 @@ let broadcastTimer: ReturnType<typeof setInterval> | null = null;
 async function broadcastData() {
   if (activeClients.size === 0) return;
   try {
-    const [systemStats, pgStats] = await Promise.all([
-      Promise.resolve(collectSystemStats()),
-      collectPgStats(),
-    ]);
-    io.emit("monitor:data", { systemStats, pgStats, timestamp: new Date().toISOString() });
+    const systemStats = collectSystemStats();
+
+    // Measure Supabase REST API latency (HTTP round-trip from STB to AWS)
+    let supabaseRestLatencyMs: number | null = null;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    if (supabaseUrl) {
+      try {
+        const start = Date.now();
+        await fetch(`${supabaseUrl}/rest/v1/`, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+        supabaseRestLatencyMs = Date.now() - start;
+      } catch {
+        supabaseRestLatencyMs = null;
+      }
+    }
+
+    const pgStats = await collectPgStats();
+    io.emit("monitor:data", { systemStats, pgStats, supabaseRestLatencyMs, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error("[MonitorWS] Error collecting data:", err);
   }

@@ -516,3 +516,32 @@ Work Log:
 - Server-side transaction cache: 30s to 15s TTL
 
 - Files modified: src/lib/supabase.ts, src/app/api/dashboard/route.ts, src/providers/query-provider.tsx, src/app/api/transactions/route.ts
+---
+Task ID: 1
+Agent: main
+Task: Replace PostgreSQL Realtime Monitor with Supabase Storage Monitor + AWS Server + Latensi Realtime
+
+Work Log:
+- Investigated current StorageTab.tsx structure (PostgreSQL Realtime Monitor, STB Monitor, Latency/Throughput cards)
+- Found monitor-ws service on port 3004 was NOT running (causing STB monitor OFFLINE)
+- Restarted monitor-ws service on port 3004
+- Updated monitor-ws/index.ts: Added Supabase REST API latency measurement (HTTP HEAD to SUPABASE_URL)
+- Created /api/storage/supabase-info/route.ts: Returns AWS server info (endpoint, region, port, DB name), Supabase project ref, storage buckets with file counts/sizes, DB version & uptime
+- Updated StorageTab.tsx:
+  - Added Cloud, Globe icons to imports
+  - Added supabaseLatency state for real-time API latency
+  - Added handler for supabaseRestLatencyMs from WebSocket data
+  - Added useQuery for supabase-info API (30s refresh)
+  - Replaced entire "PostgreSQL Realtime Monitor" card with "Supabase Storage & AWS Server" card containing:
+    - Project info grid (Supabase Project ref, AWS Region, DB Size, DB Uptime)
+    - AWS Server detail (Endpoint, DB Host, Port/DB)
+    - Realtime Latency gauges (DB Latency circular gauge, API Latency circular gauge, DB Connection count)
+    - Storage Buckets list with file count and size per bucket
+    - Fallback when no buckets exist
+
+Stage Summary:
+- STB Monitor: tetap realtime via WebSocket port 3004 (CPU, RAM, Disk, Suhu)
+- Supabase Storage Monitor: baru - menampilkan storage buckets, project info, AWS server detail
+- Latensi Realtime: 2 gauge (DB latency + API latency) diupdate setiap 3 detik via WebSocket
+- AWS Server info: endpoint, DB host, port, region dari env vars
+- monitor-ws service running on port 3004
