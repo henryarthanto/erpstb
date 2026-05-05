@@ -604,7 +604,20 @@ class PostgrestQueryBuilder {
     if (this.selectFields && Object.keys(this.selectFields).length > 0) {
       query.select = { ...this.selectFields };
       if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
-        Object.assign(query.select, this.includeConfig);
+        // Split: relations with explicit selects go into query.select, relations with 'true' go into query.include
+        const selectRelations: Record<string, any> = {};
+        const includeRelations: Record<string, any> = {};
+        for (const [key, val] of Object.entries(this.includeConfig)) {
+          if (val === true) {
+            includeRelations[key] = true;  // bare include — put in query.include
+          } else {
+            selectRelations[key] = val;    // has select/include config — put in query.select
+          }
+        }
+        Object.assign(query.select, selectRelations);
+        if (Object.keys(includeRelations).length > 0) {
+          query.include = includeRelations;
+        }
       }
     } else if (this.includeConfig && Object.keys(this.includeConfig).length > 0) {
       query.include = this.includeConfig;
