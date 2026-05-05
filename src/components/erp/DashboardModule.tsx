@@ -130,6 +130,8 @@ export default function DashboardModule() {
   const showProfit = user?.role === 'super_admin';
   
   // Fetch dashboard data
+  // NOTE: staleTime=0 ensures invalidateQueries() ALWAYS triggers refetch.
+  // Default POLLING_CONFIG has staleTime=30s which blocks invalidation.
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard', filterUnitId, dateRange],
     queryFn: async () => {
@@ -140,7 +142,10 @@ export default function DashboardModule() {
       const url = `/api/dashboard?${params.toString()}`;
       return apiFetch<{ dashboard: any }>(url);
     },
-    ...POLLING_CONFIG
+    staleTime: 0,
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
   
   // Fetch transactions for report (only when transactions or overview tab is active)
@@ -155,7 +160,10 @@ export default function DashboardModule() {
       return apiFetch<{ transactions: any[] }>(`/api/transactions?${params.toString()}`);
     },
     enabled: activeTab === 'transactions' || activeTab === 'overview',
-    ...POLLING_CONFIG
+    staleTime: 0,
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
   
   // Fetch products for report (only when products or overview tab is active)

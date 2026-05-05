@@ -55,7 +55,10 @@ export default function CourierDashboard() {
     queryKey: ['courier-dashboard', user?.id, period],
     queryFn: () => apiFetch<any>(`/api/courier/dashboard?courierId=${user?.id}&period=${period}`),
     enabled: !!user?.id,
-    ...POLLING_CONFIG
+    staleTime: 0,
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const dashboard = data?.dashboard;

@@ -120,3 +120,38 @@ Stage Summary:
 - Root cause: Missing `@map("sub_unit")` on Prisma field `subUnit` in Product model
 - Fix: Added `@map("sub_unit")` to align Prisma camelCase field with PostgreSQL snake_case column
 - File modified: prisma/schema.prisma (line 139)
+
+---
+Task ID: 6
+Agent: Main
+Task: Fix login error — DATABASE_URL overridden by shell environment (SQLite → PostgreSQL)
+
+Work Log:
+- Login endpoint returned 500: "the URL must start with the protocol postgresql://"
+- Root cause: Shell environment had `DATABASE_URL=file:/home/z/my-project/db/custom.db` (SQLite), overriding .env
+- Fixed src/lib/supabase.ts: Added `loadDatabaseUrl()` function that reads .env file directly via `fs.readFileSync()`, bypassing process.env
+- PrismaClient now uses resolved URL from .env, not process.env
+- Verified login works: POST /api/auth/login returns user + token (200)
+
+Stage Summary:
+- Shell DATABASE_URL (SQLite) no longer overrides project .env (PostgreSQL)
+- File modified: src/lib/supabase.ts
+
+---
+Task ID: 7
+Agent: Main
+Task: Fix dashboard not updating after transaction
+
+Work Log:
+- Investigated: TransactionsModule handleSaleSuccess calls invalidateQueries(['dashboard'])
+- Root cause: POLLING_CONFIG has staleTime=30s, QUERY_STALE_TIMES has dashboard=120s
+- TanStack Query IGNORES invalidateQueries while data is "fresh" (within staleTime)
+- Fix 1: DashboardModule.tsx — set staleTime=0, refetchOnMount='always' for dashboard + transactions-report queries
+- Fix 2: SalesDashboard.tsx — same fix for sales-dashboard query
+- Fix 3: CourierDashboard.tsx — same fix for courier-dashboard query
+- Fix 4: query-provider.tsx — set QUERY_STALE_TIMES['dashboard'] = 0
+- Lint clean
+
+Stage Summary:
+- Dashboard, Sales Dashboard, Courier Dashboard now always refetch on invalidate (no staleTime blocking)
+- Files modified: DashboardModule.tsx, SalesDashboard.tsx, CourierDashboard.tsx, query-provider.tsx

@@ -56,7 +56,10 @@ export default function SalesDashboard() {
     queryKey: ['sales-dashboard', user?.id, period],
     queryFn: () => apiFetch<any>(`/api/sales/dashboard?salesId=${user?.id}&period=${period}&unitId=${user?.unitId || ''}`),
     enabled: !!user?.id,
-    ...POLLING_CONFIG
+    staleTime: 0,
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const personalStats = data?.personalStats || {};

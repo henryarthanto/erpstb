@@ -81,7 +81,7 @@ export const QUERY_STALE_TIMES: Record<string, number> = {
   'finance': 30_000,
   'receivables': 30_000,
   'events': 15_000,
-  'dashboard': 120_000,
+  'dashboard': 0,
   'salaries': 60_000,
   'sales-tasks': 30_000,
   'sales-dashboard': 30_000,
