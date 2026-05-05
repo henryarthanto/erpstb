@@ -1,11 +1,19 @@
 # ============================================================
 # Razkindo ERP STB - Docker Compose
-# Usage: docker compose pull && docker compose up -d
+#
+# MODE 1 - Build lokal (rekomendasi STB):
+#   docker compose build && docker compose up -d
+#
+# MODE 2 - Pull dari GHCR (kalau CI/CD sudah berhasil):
+#   ganti `build: .` jadi comment, uncomment `image:` line
 # ============================================================
 
 services:
   erp:
-    image: ghcr.io/henryarthanto/razkindo-erp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: razkindo-erp:latest
     container_name: razkindo-erp
     restart: unless-stopped
     ports:
@@ -19,14 +27,13 @@ services:
       - STB_MODE=true
       - NODE_OPTIONS=--max-old-space-size=384
     volumes:
-      - prisma-data:/app/prisma
-      - erp-db:/app/db
+      - upload-data:/app/public/uploads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -35,7 +42,5 @@ services:
           memory: 256M
 
 volumes:
-  prisma-data:
-    driver: local
-  erp-db:
+  upload-data:
     driver: local
