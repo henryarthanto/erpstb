@@ -14,14 +14,41 @@
 // =====================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+// ─────────────────────────────────────────────────────────────────────
+// FORCE READ DATABASE_URL FROM .env FILE
+// Shell environment may have a stale/incorrect DATABASE_URL (e.g. SQLite).
+// We must always read from the project's .env file first.
+// ─────────────────────────────────────────────────────────────────────
+
+function loadDatabaseUrl(): string {
+  try {
+    const envPath = resolve(process.cwd(), '.env');
+    const envContent = readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('DATABASE_URL=') && !trimmed.startsWith('#')) {
+        const url = trimmed.substring('DATABASE_URL='.length).replace(/^["']|["']$/g, '');
+        if (url.startsWith('postgresql://') || url.startsWith('postgres://')) {
+          return url;
+        }
+      }
+    }
+  } catch {}
+  // Fallback to process.env
+  return process.env.DATABASE_URL || '';
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // PRISMA CLIENT (singleton)
 // ─────────────────────────────────────────────────────────────────────
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
+const _resolvedDbUrl = loadDatabaseUrl();
 export const prisma = globalForPrisma.prisma || new PrismaClient({
-  datasourceUrl: process.env.DATABASE_URL,
+  datasourceUrl: _resolvedDbUrl,
   // Limit connections for 2GB STB — prevents connection exhaustion
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
 });
