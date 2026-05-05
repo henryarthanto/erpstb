@@ -1,13 +1,9 @@
-# ============================================================
-# Razkindo ERP STB - CI/CD Pipeline
-# Builds multi-arch Docker image → pushes to GHCR
-# ============================================================
-
-name: CI/CD - Build & Push Docker Image
+name: CI/CD - Build and Push Docker Image
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 env:
