@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     const currentMonth = now.getMonth() + 1;
 
     // ========== RAW PRISMA QUERIES: Dashboard summary ==========
-    // Replaces the PostgreSQL RPC (get_dashboard_summary) with direct MariaDB queries.
+    // Replaces the PostgreSQL RPC (get_dashboard_summary) with direct Prisma queries.
     // Three queries run in parallel for optimal performance:
     //   1. Period summary  — totalSales, totalProfit, HPP, receivables, counts
     //   2. Today + Month    — todaySales, todayProfit, monthlySales, monthlyProfit

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       }
     } catch { /* cache miss */ }
 
-    // ── Fetch stock movements via db.from() (Prisma/MariaDB) ──
+    // ── Fetch stock movements via db.from() (Supabase/PostgreSQL) ──
     const result = await fetchMovements(productId, type, dateFrom, dateTo, limit, offset);
 
     // Cache for 30 seconds (realtime sync handles instant invalidation)
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Fetch stock movements via db.from() (Prisma/MariaDB) */
+/** Fetch stock movements via db.from() (Supabase/PostgreSQL) */
 async function fetchMovements(
   productId: string | null,
   type: string | null,

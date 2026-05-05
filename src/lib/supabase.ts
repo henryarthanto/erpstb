@@ -745,8 +745,8 @@ class PostgrestQueryBuilder {
         case 'ilike':
         case 'like': {
           const pattern = filter.value as string;
-          // MariaDB utf8mb4_general_ci is already case-insensitive — no mode needed
-          // Using mode:'insensitive' adds LOWER() wrapper which prevents index usage
+          // PostgreSQL is case-sensitive by default for LIKE.
+          // Using contains is more natural and index-friendly.
           conditions.push({ [camelField]: { contains: pattern.replace(/%/g, '') } });
           break;
         }
@@ -769,7 +769,6 @@ class PostgrestQueryBuilder {
               break;
             case 'like':
             case 'ilike':
-              // MariaDB utf8mb4_general_ci is already case-insensitive
               notCondition[camelField] = { not: { contains: value.replace(/%/g, '') } };
               break;
             case 'in':
@@ -868,7 +867,6 @@ class PostgrestQueryBuilder {
           break;
         case 'like':
         case 'ilike':
-          // MariaDB utf8mb4_general_ci is already case-insensitive
           conditions.push({ [camelField]: { contains: value.replace(/%/g, '') } });
           break;
         case 'is':
@@ -920,7 +918,7 @@ class PostgrestQueryBuilder {
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Main database client — PostgREST-compatible API backed by Prisma/MariaDB.
+ * Main database client — PostgREST-compatible API backed by Prisma/Supabase PostgreSQL.
  *
  * Usage (identical to Supabase):
  *   db.from('users').select('*').eq('id', '123')

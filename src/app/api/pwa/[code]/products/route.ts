@@ -63,7 +63,7 @@ export async function GET(
       );
     }
 
-    // ── Fetch PWA products via db.from() (Prisma/MariaDB) ──
+    // ── Fetch PWA products via db.from() (Supabase/PostgreSQL) ──
     let productList = await fetchPwaProducts(customer.id, customer.unit_id);
 
     // ── Sort: deal price products first, then frequently purchased, then by name ──
@@ -105,7 +105,7 @@ export async function GET(
   }
 }
 
-/** Fetch PWA products via db.from() (Prisma/MariaDB) — 4 parallel queries */
+/** Fetch PWA products via db.from() (Supabase/PostgreSQL) — 4 parallel queries */
 async function fetchPwaProducts(customerId: string, unitId: string): Promise<ProductInfo[]> {
   const [
     purchaseHistoryResult,

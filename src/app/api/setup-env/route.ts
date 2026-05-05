@@ -1,11 +1,11 @@
 // =====================================================================
-// SETUP ENV — Auto-generate all env vars for MariaDB/Prisma mode
+// SETUP ENV — Auto-generate all env vars for Supabase/PostgreSQL mode
 //
 // GET  /api/setup-env  — Check current env config status (super_admin)
 // POST /api/setup-env  — Generate complete .env content (super_admin)
 //
 // The POST endpoint reads existing config and derives all
-// required database URLs for the MariaDB/Prisma setup.
+// required database URLs for the Supabase/PostgreSQL setup.
 // =====================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -28,22 +28,22 @@ export async function POST(request: NextRequest) {
 
     if (!dbUrl) {
       return NextResponse.json({
-        error: 'DATABASE_URL tidak ditemukan. Set DATABASE_URL untuk koneksi MariaDB/Prisma.',
+        error: 'DATABASE_URL tidak ditemukan. Set DATABASE_URL untuk koneksi Supabase/PostgreSQL.',
       }, { status: 400 });
     }
 
-    // Build env content for MariaDB/Prisma mode
+    // Build env content for Supabase/PostgreSQL mode
     const lines: string[] = [
       '# =====================================================================',
-      '# Razkindo ERP — Auto-generated .env (MariaDB/Prisma Mode)',
+      '# Razkindo ERP — Auto-generated .env (Supabase/PostgreSQL Mode)',
       `# Generated: ${new Date().toISOString()}`,
       '# =====================================================================',
       '',
-      '# ─── Database (MariaDB/Prisma) ─────────────────────────────────────',
+      '# ─── Database (Supabase/PostgreSQL) ─────────────────────────────────────',
       `DATABASE_URL="${dbUrl}"`,
       directUrl ? `DIRECT_URL="${directUrl}"` : '# DIRECT_URL="(optional, for migrations)"',
       '',
-      '# ─── Supabase (legacy compat — may not be needed in MariaDB mode) ──',
+      '# ─── Supabase ───────────────────────────────────────────────────',
       supabaseUrl ? `NEXT_PUBLIC_SUPABASE_URL="${supabaseUrl}"` : '# NEXT_PUBLIC_SUPABASE_URL="(optional)"',
       anonKey ? `NEXT_PUBLIC_SUPABASE_ANON_KEY="${anonKey.substring(0, 8)}..."` : '# NEXT_PUBLIC_SUPABASE_ANON_KEY="(optional)"',
       serviceKey ? `SUPABASE_SERVICE_ROLE_KEY="${serviceKey.substring(0, 8)}..."` : '# SUPABASE_SERVICE_ROLE_KEY="(optional)"',
@@ -78,11 +78,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Env vars berhasil di-generate (MariaDB/Prisma mode)',
-      mode: 'mariadb',
+      message: 'Env vars berhasil di-generate (Supabase/PostgreSQL mode)',
+      mode: 'supabase',
       envContent: lines.join('\n'),
       whatToDo: [
-        '1. Pastikan DATABASE_URL mengarah ke MariaDB yang benar',
+        '1. Pastikan DATABASE_URL mengarah ke Supabase/PostgreSQL yang benar',
         '2. Simpan sebagai file .env di server/Docker container',
         '3. Restart aplikasi: docker restart erpstb',
         '4. Verifikasi: GET /api/setup-env → pastikan database.connected = true',
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
       ],
       expectedLatency: {
         cacheHit: '~5ms (in-memory)',
-        dbQuery: '~20-80ms (Prisma/MariaDB direct)',
+        dbQuery: '~20-80ms (Prisma/PostgreSQL direct)',
         realtimeSync: '~100ms (instant cache invalidation)',
       },
     });
@@ -148,17 +148,17 @@ export async function GET(request: NextRequest) {
       recs.push('   Panggil POST /api/setup-env untuk generate .env lengkap');
     }
     if (vars.DATABASE_URL.set && !dbConnected) {
-      recs.push('❌ DATABASE_URL set tapi GAGAL CONNECT → periksa URL dan kredensial MariaDB');
+      recs.push('❌ DATABASE_URL set tapi GAGAL CONNECT → periksa URL dan kredensial database');
     }
     if (dbConnected) {
-      recs.push(`✅ Database MariaDB TERKONEKSI — latensi ~${dbLatencyMs}ms`);
+      recs.push(`✅ Database PostgreSQL TERKONEKSI — latensi ~${dbLatencyMs}ms`);
     }
     if (!vars.REDIS_URL.set) {
       recs.push('ℹ️ Redis tidak ada — menggunakan in-memory cache fallback');
     }
 
     return NextResponse.json({
-      mode: 'mariadb',
+      mode: 'supabase',
       database: { connected: dbConnected, latencyMs: dbLatencyMs },
       cache: cacheStatus,
       envVars: vars,

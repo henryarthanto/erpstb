@@ -3,9 +3,9 @@ import { enforceSuperAdmin } from '@/lib/require-auth';
 import { db } from '@/lib/supabase';
 
 // =====================================================================
-// MIGRATE CUSTOMER PWA - MariaDB mode
+// MIGRATE CUSTOMER PWA - PostgreSQL mode
 //
-// In MariaDB/Prisma mode, all tables are managed by Prisma schema.
+// In PostgreSQL/Prisma mode, all tables are managed by Prisma schema.
 // This endpoint checks if PWA-related tables exist.
 // =====================================================================
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       ready: allOk,
       tables,
       message: allOk
-        ? 'Semua tabel PWA sudah siap (MariaDB)'
+        ? 'Semua tabel PWA sudah siap (PostgreSQL)'
         : 'Beberapa tabel belum dibuat. Jalankan: bun run db:push',
     });
   } catch (error: any) {
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Migration not needed in MariaDB mode.',
+      message: 'Migration not needed in PostgreSQL mode.',
       info: 'All tables are managed by Prisma schema. Run "bun run db:push" to sync.',
     });
   } catch (error: any) {

@@ -1,26 +1,26 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useWebSocket } from '@/hooks/use-websocket';
 import { useAuthStore } from '@/stores/auth-store';
-
+import { useWebSocket } from '@/hooks/use-websocket';
 import { WEBSOCKET } from '@/lib/stb-config';
 
 // =====================================================================
-// REALTIME SYNC HOOK - Bridges WebSocket events → TanStack Query cache
+// REALTIME SYNC HOOK — Bridges change events → TanStack Query cache
 //
-// Two event sources:
-//   1. data:change — From MariaDB realtime sync (Next.js server →
-//      monitor-ws → browser). Emitted after every INSERT/UPDATE/DELETE.
-//   2. erp:* events — Legacy event names for backward compatibility.
+// TWO realtime sources (automatic fallback):
+//   1. Supabase Realtime (primary) — Direct browser ↔ Supabase WebSocket
+//      using postgres_changes. No custom relay needed. Scales better.
+//   2. Socket.io relay (fallback) — Via monitor-ws service (port 3004).
+//      Used when Supabase Realtime is unavailable or not configured.
 //
 // When data changes, all connected clients automatically refresh
 // their relevant TanStack Query cache keys.
 // =====================================================================
 
 // ─── TABLE → QUERY KEYS MAPPING ────────────────────────────────────────
-// Maps MariaDB table names to TanStack Query cache keys to invalidate.
+// Maps database table names to TanStack Query cache keys to invalidate.
 
 const TABLE_TO_QUERY_KEYS: Record<string, string[][]> = {
   transactions: [
@@ -162,7 +162,7 @@ const TABLE_TO_QUERY_KEYS: Record<string, string[][]> = {
   settings: [], // Don't invalidate anything for settings changes
 };
 
-// ─── LEGACY EVENT → QUERY KEYS ─────────────────────────────────────────
+// ─── LEGACY EVENT → QUERY KEYS (socket.io fallback) ─────────────────────
 
 const EVENT_TO_QUERY_KEYS: Record<string, string[][]> = {
   'erp:transaction_update': [
@@ -209,19 +209,122 @@ function getDebounceMs(event: string): number {
   return WEBSOCKET.nonCriticalDebounceMs;
 }
 
+// ─── REALTIME SOURCE STATE ─────────────────────────────────────────────
+
+type RealtimeSource = 'supabase' | 'socketio' | 'none';
+let _globalSource: RealtimeSource = 'none';
+let _sourceListeners: Set<(source: RealtimeSource) => void> = new Set();
+
+function setGlobalSource(source: RealtimeSource) {
+  if (_globalSource !== source) {
+    _globalSource = source;
+    console.log(`[RealtimeSync] Active source: ${source}`);
+    for (const listener of _sourceListeners) {
+      try { listener(source); } catch { /* ignore */ }
+    }
+  }
+}
+
+export function getRealtimeSource(): RealtimeSource {
+  return _globalSource;
+}
+
+export function onRealtimeSourceChange(listener: (source: RealtimeSource) => void): () => void {
+  _sourceListeners.add(listener);
+  return () => _sourceListeners.delete(listener);
+}
+
 /**
- * Hook that subscribes to WebSocket events and invalidates
+ * Hook that subscribes to data changes and invalidates
  * TanStack Query cache keys for seamless real-time data sync.
  *
- * Now listens for both:
- *   - data:change events from MariaDB realtime sync (new)
- *   - erp:* events (legacy compatibility)
+ * Uses Supabase Realtime (postgres_changes) as primary source,
+ * with socket.io relay as automatic fallback.
  */
 export function useRealtimeSync() {
   const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [supabaseReady, setSupabaseReady] = useState(false);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
 
+  // Debounced invalidation helper
+  const invalidateWithDebounce = useRef((queryKeys: string[][], debounceMs: number) => {
+    for (const key of queryKeys) {
+      const keyStr = JSON.stringify(key);
+      const existing = debounceTimers.current.get(keyStr);
+      if (existing) clearTimeout(existing);
+
+      debounceTimers.current.set(keyStr, setTimeout(() => {
+        debounceTimers.current.delete(keyStr);
+        queryClient.invalidateQueries({ queryKey: key });
+      }, debounceMs));
+    }
+  }).current;
+
+  // ─── 1. SUPABASE REALTIME (primary) ───────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let unsub: (() => void) | null = null;
+
+    // Dynamic import to avoid SSR issues
+    import('@/lib/supabase-realtime').then(({ supabaseRealtime, isSupabaseConfigured }) => {
+      if (!isSupabaseConfigured()) {
+        console.log('[useRealtimeSync] Supabase not configured — using socket.io fallback');
+        setSupabaseError('not_configured');
+        return;
+      }
+
+      // Subscribe to all table changes
+      unsub = supabaseRealtime.onAnyChange((event) => {
+        const queryKeys = TABLE_TO_QUERY_KEYS[event.table];
+        if (!queryKeys || queryKeys.length === 0) return;
+
+        invalidateWithDebounce(queryKeys, INVALIDATION_DEBOUNCE_MS);
+      });
+
+      // Start Supabase Realtime
+      supabaseRealtime.start();
+
+      // Check availability after a short delay
+      const checkTimer = setTimeout(() => {
+        if (supabaseRealtime.isAvailable()) {
+          setSupabaseReady(true);
+          setSupabaseError(null);
+          setGlobalSource('supabase');
+        } else if (supabaseRealtime.getError()) {
+          setSupabaseError(supabaseRealtime.getError());
+          // Don't set global source here — socket.io will take over
+        }
+      }, 3000);
+
+      // Monitor availability changes
+      const monitorTimer = setInterval(() => {
+        if (supabaseRealtime.isAvailable() && !supabaseReady) {
+          setSupabaseReady(true);
+          setSupabaseError(null);
+          setGlobalSource('supabase');
+        }
+      }, 5000);
+
+      return () => {
+        clearTimeout(checkTimer);
+        clearInterval(monitorTimer);
+        // Don't stop the realtime — let it persist across component mounts
+        // supabaseRealtime.stop() is called at app unmount
+      };
+    }).catch((err) => {
+      console.warn('[useRealtimeSync] Failed to load Supabase Realtime:', err.message);
+      setSupabaseError(err.message);
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [user?.id]);
+
+  // ─── 2. SOCKET.IO RELAY (fallback) ───────────────────────────────────
   const { on, off, isConnected } = useWebSocket({
     userId: user?.id || '',
     role: user?.role || '',
@@ -232,11 +335,17 @@ export function useRealtimeSync() {
   });
 
   useEffect(() => {
+    // If Supabase Realtime is active, skip socket.io data relay
+    // (socket.io is still used for online presence, system monitoring)
+    if (supabaseReady) return;
     if (!isConnected || !user?.id) return;
+
+    // Set socket.io as fallback source
+    setGlobalSource('socketio');
 
     const handlers: { event: string; handler: (...args: any[]) => void }[] = [];
 
-    // ─── 1. data:change handler (MariaDB realtime sync) ───────────────
+    // ─── data:change handler (server-side relay) ──────────────────
     const dataChangeHandler = (event: {
       table: string;
       action: string;
@@ -248,21 +357,12 @@ export function useRealtimeSync() {
       const queryKeys = TABLE_TO_QUERY_KEYS[event.table];
       if (!queryKeys) return;
 
-      for (const key of queryKeys) {
-        const keyStr = JSON.stringify(key);
-        const existing = debounceTimers.current.get(keyStr);
-        if (existing) clearTimeout(existing);
-
-        debounceTimers.current.set(keyStr, setTimeout(() => {
-          debounceTimers.current.delete(keyStr);
-          queryClient.invalidateQueries({ queryKey: key });
-        }, INVALIDATION_DEBOUNCE_MS));
-      }
+      invalidateWithDebounce(queryKeys, INVALIDATION_DEBOUNCE_MS);
     };
     handlers.push({ event: 'data:change', handler: dataChangeHandler });
     on('data:change', dataChangeHandler);
 
-    // ─── 2. Legacy erp:* event handlers ────────────────────────────────
+    // ─── Legacy erp:* event handlers ───────────────────────────────
     const events = Object.keys(EVENT_TO_QUERY_KEYS);
 
     for (const event of events) {
@@ -283,15 +383,7 @@ export function useRealtimeSync() {
         if (!queryKeys) continue;
 
         const handler = (_data: any) => {
-          for (const key of queryKeys) {
-            const keyStr = JSON.stringify(key);
-            const existing = debounceTimers.current.get(keyStr);
-            if (existing) clearTimeout(existing);
-            debounceTimers.current.set(keyStr, setTimeout(() => {
-              debounceTimers.current.delete(keyStr);
-              queryClient.invalidateQueries({ queryKey: key });
-            }, getDebounceMs(event)));
-          }
+          invalidateWithDebounce(queryKeys, getDebounceMs(event));
         };
         handlers.push({ event, handler });
         on(event, handler);
@@ -303,10 +395,23 @@ export function useRealtimeSync() {
       for (const { event, handler } of handlers) {
         off(event, handler);
       }
+    };
+  }, [isConnected, user?.id, supabaseReady, queryClient, on, off, invalidateWithDebounce]);
+
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
       for (const timer of debounceTimers.current.values()) {
         clearTimeout(timer);
       }
       debounceTimers.current.clear();
     };
-  }, [isConnected, user?.id, queryClient, on, off]);
+  }, []);
+
+  return {
+    source: _globalSource as RealtimeSource,
+    supabaseReady,
+    supabaseError,
+    socketIoConnected: isConnected,
+  };
 }

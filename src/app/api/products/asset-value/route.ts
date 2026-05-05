@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       if (cached) return NextResponse.json(cached);
     } catch { /* cache miss */ }
 
-    // ── Fetch products via db.from() (Prisma/MariaDB) ──
+    // ── Fetch products via db.from() (Supabase/PostgreSQL) ──
     const productList = await fetchAssetProducts();
 
     let totalAssetValue = 0;
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Fetch products for asset value calculation via db.from() (Prisma/MariaDB) */
+/** Fetch products for asset value calculation via db.from() (Supabase/PostgreSQL) */
 async function fetchAssetProducts(): Promise<any[]> {
   const { data: products, error } = await db
     .from('products')

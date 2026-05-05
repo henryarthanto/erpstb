@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       // Cache miss — fall through to data source
     }
 
-    // ── DATA SOURCE: Direct via db.from() (Prisma/MariaDB) ──
+    // ── DATA SOURCE: Direct via db.from() (Supabase/PostgreSQL) ──
     if (!cacheHit) {
       productsCamel = await fetchProducts();
 
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Fetch products with unit products via db.from() (Prisma/MariaDB) */
+/** Fetch products with unit products via db.from() (Supabase/PostgreSQL) */
 async function fetchProducts(): Promise<any[]> {
   const { data: products } = await db
     .from('products')

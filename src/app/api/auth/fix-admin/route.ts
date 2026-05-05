@@ -3,10 +3,10 @@ import { prisma } from '@/lib/supabase';
 import bcrypt from 'bcryptjs';
 
 // ─────────────────────────────────────────────────────────────────────
-// EMERGENCY ENDPOINT — Fix admin user in MariaDB directly via Prisma
+// EMERGENCY ENDPOINT — Fix admin user in PostgreSQL directly via Prisma
 //
 // Bypasses the PostgREST wrapper entirely to diagnose and fix
-// authentication issues after MariaDB migration.
+// authentication issues after database migration.
 //
 // Usage: POST /api/auth/fix-admin
 //   Body: { email: "admin@razkindo.com", password: "admin123" }
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log('[fix-admin] All users in MariaDB:', allUsers.map(u => ({
+    console.log('[fix-admin] All users in database:', allUsers.map(u => ({
       email: u.email,
       role: u.role,
       status: u.status,

@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
   const authResult = await enforceSuperAdmin(request);
   if (!authResult.success) return authResult.response;
   try {
-    // 1. Database Connection Info (MariaDB/Prisma)
-    let dbStatus: any = { connected: false, latencyMs: null, mode: 'mariadb' };
+    // 1. Database Connection Info (PostgreSQL/Prisma)
+    let dbStatus: any = { connected: false, latencyMs: null, mode: 'postgresql' };
     try {
       const t0 = Date.now();
       // Simple health-check query via Prisma
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       dbStatus = {
         connected: true,
         latencyMs: Date.now() - t0,
-        mode: 'mariadb',
+        mode: 'postgresql',
         adapter: 'Prisma Client',
         pool: {
           maxSize: DB_POOL.max || 10,
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
     const issues: string[] = perfMetrics?.summary?.issues ?? [];
 
     if (!dbStatus.connected) {
-      issues.push('MariaDB/Prisma database connection is down');
+      issues.push('PostgreSQL/Prisma database connection is down');
     }
 
     // ✅ STB: Additional health checks

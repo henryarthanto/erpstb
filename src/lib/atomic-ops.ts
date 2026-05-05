@@ -6,7 +6,7 @@
 //
 // Replaces the previous PostgreSQL RPC functions (atomic_update_balance,
 // atomic_update_setting_balance, atomic_decrement_stock) that were
-// removed during the MariaDB migration.
+// removed during the PostgreSQL migration.
 // =====================================================================
 
 import { prisma } from './supabase';

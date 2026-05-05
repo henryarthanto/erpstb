@@ -3,7 +3,7 @@ import { enforceSuperAdmin } from '@/lib/require-auth';
 import { RPC_DEFINITIONS } from '@/lib/ensure-rpc';
 
 // =====================================================================
-// SETUP RPC - Disabled in MariaDB mode
+// SETUP RPC - Disabled in PostgreSQL mode
 //
 // PostgreSQL RPC functions (stored procedures) have been replaced by
 // Prisma transactions. This endpoint returns an informational message.
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'RPC functions are not needed in MariaDB mode.',
+      message: 'RPC functions are not needed in PostgreSQL mode.',
       info: 'All atomic operations now use Prisma $transaction instead of PostgreSQL stored procedures.',
       migratedFunctions: [
         'atomic_update_balance → atomic-ops.ts (Prisma $transaction)',

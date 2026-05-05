@@ -227,7 +227,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   const { data: dbMonitorStatic } = useQuery({
     queryKey: ['db-monitor-static'],
     queryFn: async () => {
-      const json = await apiFetch<{ success: boolean; data: any; error?: string }>('/api/storage/mariadb-monitor');
+      const json = await apiFetch<{ success: boolean; data: any; error?: string }>('/api/storage/mariadb-monitor'); // route kept for backward compat — returns PostgreSQL stats
       if (!json.success) throw new Error(json.error);
       return json.data;
     },

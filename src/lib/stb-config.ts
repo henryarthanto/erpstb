@@ -9,7 +9,7 @@
 //   OS + System:         ~400MB
 //   Next.js Runtime:     ~600MB (V8 heap)
 //   Event Queue Service: ~80MB
-//   Database (Prisma/MariaDB): ~60MB
+//   Database (Prisma/PostgreSQL): ~60MB
 //   WebSocket Buffers:   ~40MB
 //   Filesystem/Cache:    ~120MB
 //   Headroom:            ~700MB

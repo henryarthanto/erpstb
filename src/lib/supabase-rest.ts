@@ -1,5 +1,5 @@
 // =====================================================================
-// SUPABASE REST CLIENT — Stub (migrated to MariaDB/Prisma)
+// SUPABASE REST CLIENT — Stub (using Supabase PostgreSQL/Prisma)
 //
 // The real Supabase REST client has been replaced by a Prisma-based
 // PostgREST-compatible wrapper in supabase.ts.

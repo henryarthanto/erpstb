@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (insertError) {
-        // MariaDB: ER_DUP_ENTRY, PostgreSQL: 23505
+        // PostgreSQL: 23505 (unique constraint violation)
         const msg = insertError.message || '';
         if (insertError.code === '23505' || msg.includes('Duplicate entry') || msg.includes('UNIQUE constraint')) {
           return NextResponse.json(

@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       info: {
-        database: 'MariaDB',
+        database: 'PostgreSQL',
         tables: tableMap,
         summaries: {
           totalSales,

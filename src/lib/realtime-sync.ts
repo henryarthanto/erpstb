@@ -1,13 +1,16 @@
 // =====================================================================
-// REALTIME SYNC — MariaDB binlog-based change broadcasting via WebSocket
+// REALTIME SYNC — Server-side change broadcasting via WebSocket
 //
-// Since MariaDB doesn't have PostgreSQL's WAL-based LISTEN/NOTIFY,
-// we implement realtime sync using:
+// Provides a fallback realtime mechanism using socket.io relay:
 //   1. A Socket.io client connecting to the monitor-ws service (port 3004)
 //   2. API routes call broadcastChange() after mutations
 //   3. The monitor-ws service relays change events to all browser clients
 //
-// This gives instant UI updates when data changes without polling.
+// PRIMARY: Supabase Realtime (postgres_changes) handles instant updates
+//          directly from PostgreSQL WAL. This module is the FALLBACK.
+//
+// ws-dispatch.ts calls broadcastChange() from API routes.
+// use-realtime-sync.ts listens on the browser via use-websocket.ts.
 // =====================================================================
 
 import { io, Socket } from 'socket.io-client';
@@ -41,7 +44,7 @@ class RealtimeSync extends EventEmitter {
       return;
     }
 
-    console.log(`[RealtimeSync] Connecting to monitor-ws (port ${MONITOR_WS_PORT})...`);
+    console.log(`[RealtimeSync] Connecting to monitor-ws (port ${MONITOR_WS_PORT}) as fallback...`);
 
     this.client = io('/?XTransformPort=' + MONITOR_WS_PORT, {
       transports: ['websocket'],

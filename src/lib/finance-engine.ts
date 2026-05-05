@@ -112,8 +112,8 @@ async function doubleEntry(
   createdBy?: string,
   minBalance = 0,
 ): Promise<{ debitResult: number; creditResult: number }> {
-  // Sequential fallback (no atomic RPC in MariaDB mode)
-  console.warn('[FinanceEngine] doubleEntry using sequential fallback (no atomic RPC in MariaDB mode)');
+  // Sequential fallback (no atomic RPC in PostgreSQL mode)
+  console.warn('[FinanceEngine] doubleEntry using sequential fallback (no atomic RPC in PostgreSQL mode)');
 
   const debitDesc = debit.type === 'pool'
     ? `${description} (Debit: ${getPoolLabel(debit.key)})`

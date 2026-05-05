@@ -1,13 +1,12 @@
 {
   "name": "monitor-ws",
-  "version": "1.0.0",
-  "description": "WebSocket service for realtime system & MariaDB monitoring",
+  "version": "2.0.0",
+  "description": "WebSocket service for realtime system & PostgreSQL monitoring + change relay",
   "type": "module",
   "scripts": {
     "dev": "bun --hot index.ts"
   },
   "dependencies": {
-    "mysql2": "^3.12.0",
     "pg": "^8.20.0",
     "socket.io": "^4.8.1"
   }
