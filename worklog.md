@@ -195,3 +195,20 @@ Stage Summary:
 - Quick update stock button now visible on ALL product cards
 - Dropdown "Update Stok" menu always available (no isTracking gate)
 - File modified: src/components/erp/ProductsModule.tsx
+
+---
+Task ID: 10
+Agent: Main
+Task: Fix "Cannot read properties of null (reading 'name')" in PATCH /api/products/[id]
+
+Work Log:
+- Error occurred at line 167 in src/app/api/products/[id]/route.ts
+- Root cause: `toCamelCase(product).name` crashed because Supabase `.update().select().single()` returned null for `product`
+- `toCamelCase(null)` returns null, then accessing `.name` on null throws TypeError
+- Fix: Use `existing` (already fetched and null-checked earlier) as fallback for product name
+- Also added null safety for response data: `product ? toCamelCase(product) : toCamelCase(existing)`
+- Lint clean (only pre-existing errors in keep-alive.js)
+
+Stage Summary:
+- PATCH /api/products/[id] no longer crashes when Supabase update response is null
+- File modified: src/app/api/products/[id]/route.ts

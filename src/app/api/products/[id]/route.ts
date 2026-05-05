@@ -164,13 +164,16 @@ export async function PATCH(
       `)
       .single();
 
-    createEvent(db, 'product_updated', { productId: id, productName: data.name || toCamelCase(product).name });
+    const productName = data.name || (existing as any).name || 'Unknown';
+    createEvent(db, 'product_updated', { productId: id, productName });
     createLog(db, { type: 'activity', userId: authUserId, action: 'product_updated', entity: 'product', entityId: id });
 
     // Invalidate all product caches on update
     try { await invalidateAllProductCaches(); } catch { /* non-fatal */ }
 
-    return NextResponse.json({ product: toCamelCase(product) });
+    // Use updated product if available, otherwise use existing
+    const responseData = product ? toCamelCase(product) : toCamelCase(existing);
+    return NextResponse.json({ product: responseData });
   } catch (error: any) {
     console.error('Update product error:', error);
     return NextResponse.json(
