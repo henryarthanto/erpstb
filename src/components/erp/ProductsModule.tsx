@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Search, Plus, Edit, Package, MoreVertical, Trash2, AlertTriangle, Minus, Camera, X, Sparkles, Loader2, TrendingUp, TrendingDown, ArrowUpDown, Warehouse, Filter, ChevronLeft, ChevronRight, DollarSign, BarChart3, AlertCircle, PackageCheck, PackageX } from 'lucide-react';
+import { Search, Plus, Edit, Package, MoreVertical, Trash2, AlertTriangle, Minus, Camera, X, Sparkles, Loader2, TrendingUp, TrendingDown, ArrowUpDown, Warehouse, Filter, ChevronLeft, ChevronRight, DollarSign, BarChart3, AlertCircle, PackageCheck, PackageX, PencilLine, PackageSearch } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
 import { useUnitStore } from '@/stores/unit-store';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -1066,13 +1066,21 @@ export default function ProductsModule() {
                         <p className="text-xs text-muted-foreground min-w-0 truncate">{p.sku || '-'}</p>
                       </div>
                       <div className="flex items-center gap-1 justify-end mt-1">
-                        <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
-                          {isTracking ? displayStockStr : 'Nonaktif'}
-                        </Badge>
-                        {isTracking && p.hasAccess !== false && (user?.role === 'super_admin' || user?.role === 'keuangan') && (
-                          <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]" onClick={() => setShowStock(p)}>
-                            <Package className="w-3 h-3" />
+                        {/* Stock badge — clickable to open quick stock update */}
+                        {isTracking && p.hasAccess !== false && ['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') ? (
+                          <Button
+                            variant={isLow ? "destructive" : "secondary"}
+                            size="sm"
+                            className="h-7 gap-1 text-xs font-medium px-2"
+                            onClick={() => setShowStock(p)}
+                          >
+                            <PackageSearch className="w-3 h-3" />
+                            {displayStockStr}
                           </Button>
+                        ) : (
+                          <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
+                            {isTracking ? displayStockStr : 'Nonaktif'}
+                          </Badge>
                         )}
                         {['super_admin', 'keuangan', 'gudang'].includes(user?.role || '') && (
                           <DropdownMenu>
@@ -1088,8 +1096,8 @@ export default function ProductsModule() {
                               </DropdownMenuItem>
                               {isTracking && (
                                 <DropdownMenuItem onClick={() => setShowStock(p)}>
-                                  <Package className="w-4 h-4 mr-2" />
-                                  Kelola Stok
+                                  <PencilLine className="w-4 h-4 mr-2" />
+                                  Update Stok
                                 </DropdownMenuItem>
                               )}
                               {user?.role === 'super_admin' && (

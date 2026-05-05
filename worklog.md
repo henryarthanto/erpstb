@@ -155,3 +155,25 @@ Work Log:
 Stage Summary:
 - Dashboard, Sales Dashboard, Courier Dashboard now always refetch on invalidate (no staleTime blocking)
 - Files modified: DashboardModule.tsx, SalesDashboard.tsx, CourierDashboard.tsx, query-provider.tsx
+
+---
+Task ID: 8
+Agent: Main
+Task: Fix dashboard not updating + add quick stock update buttons
+
+Work Log:
+- Dashboard always showed 0 for totalSales, totalProfit, etc.
+- Root cause 1: Prisma $queryRaw returns lowercase column names (totalsales, not totalSales)
+- Root cause 2: SUM() returns Prisma Decimal objects, Number() on Decimal returns NaN
+- Fix: Added double-quoted AS aliases (AS "totalSales") and ::numeric cast in all 3 dashboard raw queries
+- Also fixed staleTime=30s blocking invalidateQueries → set staleTime=0 for dashboard queries
+- Added visible quick stock update button on each product card:
+  - Clickable stock badge (PackageSearch icon + stock text) opens StockForm directly
+  - Available for super_admin, keuangan, gudang roles
+  - Old tiny Package icon button removed, replaced with clear badge button
+  - Dropdown "Update Stok" menu item with PencilLine icon
+
+Stage Summary:
+- Dashboard now shows correct totals (totalSales, totalProfit, todaySales, monthlySales)
+- Quick stock update accessible via clickable stock badge on every product card
+- Files modified: src/app/api/dashboard/route.ts, src/components/erp/ProductsModule.tsx
