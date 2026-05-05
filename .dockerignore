@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+.github
+*.md
+.env*.local
+.vercel
+docker-compose*
+Dockerfile
+.dockerignore
+skills
+test
+prompt
+*.log
+claude
+.z-ai-config
