@@ -4,6 +4,7 @@ import { toCamelCase, createEvent, generateId, generateInvoiceNo } from '@/lib/s
 import { getWhatsAppConfig, sendMessage, disableWhatsAppOnInvalidToken } from '@/lib/whatsapp';
 import { wsTransactionUpdate } from '@/lib/ws-dispatch';
 import { pwaOrderLimiter } from '@/lib/rate-limiter';
+import { cacheGet, cacheSet, cacheInvalidatePrefix } from '@/lib/redis-cache';
 
 // =====================================================================
 // PWA Customer Orders
@@ -21,6 +22,15 @@ export async function GET(
     if (!code || code.trim().length === 0) {
       return NextResponse.json({ error: 'Kode pelanggan diperlukan' }, { status: 400 });
     }
+
+    // FIX BUG 6: Cache results with 30s TTL to reduce DB load
+    const cacheKey = `pwa:orders:${code.trim().toUpperCase()}`;
+    try {
+      const cached = await cacheGet<any[]>(cacheKey);
+      if (cached) {
+        return NextResponse.json({ orders: cached });
+      }
+    } catch {}
 
     // Look up customer (only active)
     const { data: customer } = await db
@@ -100,6 +110,11 @@ export async function GET(
       };
     });
 
+    // Store in cache (30s TTL)
+    try {
+      await cacheSet(cacheKey, transactionsCamel, { ttlMs: 30_000 });
+    } catch {}
+
     return NextResponse.json({ orders: transactionsCamel });
   } catch (error) {
     console.error('PWA orders GET error:', error);
@@ -168,37 +183,10 @@ export async function POST(
     // Payment method: default 'tempo' — sales/admin will set the actual method when approving
     const paymentMethod = 'tempo';
 
-    // Generate invoice number
-    // FIX: Add retry logic for race condition — concurrent orders may generate same invoice number
+    // FIX BUG 8: Generate invoice with nanoid (race-condition free)
+    // nanoid(6) provides 36^6 = 2.1 billion possibilities — collision extremely unlikely
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    let invoiceNo = '';
-    let invoiceRetries = 0;
-    const maxInvoiceRetries = 3;
-    while (invoiceRetries < maxInvoiceRetries) {
-      const { count: txCount } = await db
-        .from('transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('type', 'sale')
-        .gte('created_at', monthStart.toISOString());
-      // RESOLVED: UNIQUE constraint on (invoice_no) exists via Prisma schema @unique directive.
-      // Race condition mitigation: append millisecond timestamp as tiebreaker suffix.
-      const candidateInvoiceNo = generateInvoiceNo('sale', (txCount || 0) + invoiceRetries) + `-${Date.now().toString(36)}`;
-      // Check if this invoice already exists (race condition guard)
-      const { count: existingCount } = await db
-        .from('transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('invoice_no', candidateInvoiceNo);
-      if (!existingCount || existingCount === 0) {
-        invoiceNo = candidateInvoiceNo;
-        break;
-      }
-      invoiceRetries++;
-      console.warn(`[PWA ORDER] Invoice collision on ${candidateInvoiceNo}, retry ${invoiceRetries}/${maxInvoiceRetries}`);
-    }
-    if (!invoiceNo) {
-      return NextResponse.json({ error: 'Gagal membuat nomor invoice. Coba lagi.' }, { status: 500 });
-    }
+    const invoiceNo = generateInvoiceNo('sale');
     const transactionId = generateId();
 
     // Find the assigned sales user (or any sales in unit as fallback)
@@ -327,6 +315,11 @@ export async function POST(
 
     // Dispatch WebSocket update for real-time notification
     wsTransactionUpdate({ invoiceNo, type: 'sale', status: 'pending', unitId: customer.unit_id });
+
+    // Invalidate PWA orders cache for this customer
+    try {
+      await cacheInvalidatePrefix(`pwa:orders:${code.trim().toUpperCase()}`);
+    } catch {}
 
     // Send WhatsApp notification to sales
     try {

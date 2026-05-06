@@ -15,6 +15,10 @@
 
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
+// Lazy import to avoid importing stb-config on client bundle
+let _IS_STB = false;
+try { _IS_STB = process.env.NEXT_PUBLIC_STB_MODE === 'true'; } catch {}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -40,15 +44,24 @@ export function getSupabaseClient(): SupabaseClient {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
     },
     realtime: {
       params: {
-        eventsPerSecond: 10,
+        eventsPerSecond: _IS_STB ? 3 : 10,
       },
     },
     db: {
       schema: 'public',
+    },
+    global: {
+      fetch: (url: string, options: RequestInit = {}) => {
+        // Add timeout to every Supabase client request
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        return fetch(url, { ...options, signal: controller.signal })
+          .finally(() => clearTimeout(timeout));
+      },
     },
   });
 

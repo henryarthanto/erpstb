@@ -16,10 +16,15 @@ interface QueueConnection {
   };
 }
 
+// FIX BUG 4: Handle both redis:// and rediss:// protocols
+function buildRedisConnection(url: string): QueueConnection['connection'] {
+  if (!url) return undefined;
+  // ioredis handles both redis:// and rediss:// with { url }
+  return { url };
+}
+
 const queueOpts: QueueConnection = REDIS_URL
-  ? { connection: typeof REDIS_URL === 'string' && REDIS_URL.startsWith('rediss://')
-      ? { url: REDIS_URL }
-      : {} }
+  ? { connection: buildRedisConnection(REDIS_URL) }
   : {};
 
 // In-memory fallback job store when Redis is unavailable
@@ -54,9 +59,7 @@ export function getQueue(queueName: string = 'default'): Queue | null {
   if (!queueInstance) {
     try {
       queueInstance = new Queue(queueName, {
-        connection: typeof REDIS_URL === 'string' && REDIS_URL.startsWith('rediss://')
-          ? { url: REDIS_URL } as any
-          : undefined,
+        connection: buildRedisConnection(REDIS_URL) as any,
         defaultJobOptions: {
           removeOnComplete: { count: IS_STB ? 50 : 200 },
           removeOnFail: { count: IS_STB ? 20 : 100 },
@@ -94,9 +97,7 @@ export function registerProcessor(jobName: string, processor: JobProcessor): voi
           return proc(job);
         },
         {
-          connection: typeof REDIS_URL === 'string' && REDIS_URL.startsWith('rediss://')
-            ? { url: REDIS_URL } as any
-            : undefined,
+          connection: buildRedisConnection(REDIS_URL) as any,
           concurrency: IS_STB ? 2 : 5,
           limiter: {
             max: IS_STB ? 10 : 50,

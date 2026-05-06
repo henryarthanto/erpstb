@@ -2,7 +2,8 @@
 // INSTRUMENTATION — Next.js Server Startup Hook
 //
 // Initializes:
-//   1. Realtime Sync — Socket.io client → monitor-ws (port 3004)
+//   1. Prisma Connection Warmup — Pre-warm DB pool at startup
+//   2. Realtime Sync — Socket.io client → monitor-ws (port 3004)
 //
 // Auto-reconnect enabled. Graceful shutdown handlers for Node.js runtime.
 // =====================================================================
@@ -12,7 +13,16 @@ export async function register() {
 
   console.log('[Instrumentation] Server starting (Supabase PostgreSQL/Prisma mode)...');
 
-  // ─── 1. Realtime Sync ────────────────────────────────────────────
+  // ─── 1. Prisma Connection Warmup ──────────────────────────────
+  try {
+    const { prisma } = await import('@/lib/supabase');
+    await prisma.$connect();
+    console.log('[Instrumentation] Prisma connection warmed up ✓');
+  } catch (err) {
+    console.warn(`[Instrumentation] Prisma warmup failed: ${(err as Error).message}`);
+  }
+
+  // ─── 2. Realtime Sync ─────────────────────────────────────────
   try {
     const { startRealtimeSync } = await import('@/lib/realtime-sync');
     startRealtimeSync();
@@ -21,17 +31,27 @@ export async function register() {
     console.warn(`[Instrumentation] Realtime sync: failed (${(e as Error).message})`);
   }
 
-  // ─── 2. Graceful Shutdown (Node.js only) ─────────────────────────
+  // ─── 3. Graceful Shutdown (Node.js only) ──────────────────────
   try {
     const process = globalThis.process;
     if (process && typeof process.on === 'function') {
       process.on('SIGTERM', async () => {
         console.log('[Instrumentation] SIGTERM — shutting down...');
+        try {
+          const { prisma } = await import('@/lib/supabase');
+          await prisma.$disconnect();
+        } catch {}
         try { const { stopRealtimeSync } = await import('@/lib/realtime-sync'); stopRealtimeSync(); } catch {}
+        process.exit(0);
       });
       process.on('SIGINT', async () => {
         console.log('[Instrumentation] SIGINT — shutting down...');
+        try {
+          const { prisma } = await import('@/lib/supabase');
+          await prisma.$disconnect();
+        } catch {}
         try { const { stopRealtimeSync } = await import('@/lib/realtime-sync'); stopRealtimeSync(); } catch {}
+        process.exit(0);
       });
     }
   } catch {}

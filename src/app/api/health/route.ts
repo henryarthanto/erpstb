@@ -2,7 +2,8 @@
 // HEALTH CHECK ENDPOINT
 // GET /api/health
 //
-// Returns system health report: database connectivity, memory, cache.
+// Returns comprehensive system health report: database connectivity,
+// memory, cache, uptime, and process info.
 // PostgreSQL/Prisma mode (Supabase).
 // =====================================================================
 
@@ -23,14 +24,22 @@ export async function GET(request: NextRequest) {
   const timestamp = new Date().toISOString();
   const uptime = Math.floor(process.uptime());
 
-  // Database check
+  // Database check — comprehensive
   const dbStart = performance.now();
   let dbStatus: CheckStatus = 'ok';
   let dbLatency = 0;
   let dbError: string | undefined;
+  let dbPoolSize = 0;
   try {
-    await prisma.setting.findFirst({ select: { key: true }, take: 1 });
+    await prisma.$queryRaw`SELECT 1`;
     dbLatency = Math.round(performance.now() - dbStart);
+    // Try to get pool info (Prisma internal)
+    try {
+      const pool = (prisma as any)._engine?.dbClient?._pool;
+      if (pool) {
+        dbPoolSize = pool.numUsed?.() + pool.numFree?.() || pool.totalCount || 0;
+      }
+    } catch {}
   } catch (err: any) {
     dbStatus = 'error';
     dbLatency = Math.round(performance.now() - dbStart);
@@ -47,10 +56,19 @@ export async function GET(request: NextRequest) {
   // Cache status
   const cache = getCacheStatus();
 
+  // Process info
+  const processInfo = {
+    node_version: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    pid: process.pid,
+  };
+
   // Determine overall status
   let status: OverallStatus = 'healthy';
   if (dbStatus === 'error') status = 'unhealthy';
   else if (memPercent > 90) status = 'degraded';
+  else if (dbLatency > 5000) status = 'degraded';
 
   return NextResponse.json({
     status,
@@ -60,6 +78,7 @@ export async function GET(request: NextRequest) {
     database: {
       status: dbStatus,
       latency_ms: dbLatency,
+      pool_size: dbPoolSize || undefined,
       error: dbError,
       url: process.env.DATABASE_URL?.replace(/:([^@]+)@/, ':****@') || 'not configured',
     },
@@ -70,6 +89,6 @@ export async function GET(request: NextRequest) {
       heap_percent: memPercent,
     },
     cache,
+    process: processInfo,
   }, { status: status === 'unhealthy' ? 503 : 200 });
 }
-// trigger build Tue May  5 13:39:20 UTC 2026

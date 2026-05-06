@@ -113,6 +113,8 @@ class SupabaseRealtimeManager {
   private anyCallbacks: Set<TableChangeCallback> = new Set();
   private error: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectDelay = 1_000; // Start at 1s (exponential backoff)
+  private readonly MAX_RECONNECT_DELAY = 60_000; // Max 60s
 
   // ─── LIFECYCLE ───────────────────────────────────────────────────
 
@@ -249,6 +251,7 @@ class SupabaseRealtimeManager {
           this.available = true;
           this.connecting = false;
           this.error = null;
+          this.reconnectDelay = 1_000; // Reset backoff on successful connection
           console.log('[SupabaseRealtime] ✅ Connected — realtime active for all tables');
           break;
         case 'TIMED_OUT':
@@ -304,8 +307,11 @@ class SupabaseRealtimeManager {
   private scheduleReconnect(): void {
     if (this.reconnectTimer || !this.started) return;
 
-    const delay = 10000; // 10 seconds
-    console.log(`[SupabaseRealtime] Scheduling reconnect in ${delay / 1000}s...`);
+    // Exponential backoff with jitter
+    const jitter = Math.random() * 1000; // 0-1s random jitter
+    const delay = Math.min(this.reconnectDelay + jitter, this.MAX_RECONNECT_DELAY);
+
+    console.log(`[SupabaseRealtime] Scheduling reconnect in ${Math.round(delay / 1000)}s (base: ${this.reconnectDelay}ms)...`);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -330,6 +336,9 @@ class SupabaseRealtimeManager {
         this.scheduleReconnect();
       }
     }, delay);
+
+    // Double delay for next attempt (exponential backoff)
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.MAX_RECONNECT_DELAY);
   }
 }
 

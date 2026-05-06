@@ -54,6 +54,13 @@ import { DB_POOL } from './stb-config';
 function buildPooledUrl(url: string): string {
   try {
     const u = new URL(url);
+    const isPooler = u.port === '6543' || u.searchParams.has('pgbouncer');
+    if (isPooler) {
+      // Don't override connection_limit — Supavisor manages the pool
+      u.searchParams.set('pool_timeout', '10');
+      return u.toString();
+    }
+    // Direct connection — set limit from STB config
     u.searchParams.set('connection_limit', String(DB_POOL.tx.max));
     u.searchParams.set('pool_timeout', String(Math.floor(DB_POOL.tx.connectionTimeoutMs / 1000)));
     return u.toString();
@@ -721,50 +728,36 @@ class PostgrestQueryBuilder {
     }
 
     if (conflictFields && conflictFields.length > 0) {
-      // Parse onConflict fields into Prisma's expected format
-      // e.g. "customer_id,product_id" → { courierId_unitId: { ... } } or compound unique name
+      // Build where clause from conflict fields
       const whereClause: Record<string, any> = {};
       for (const field of conflictFields) {
         whereClause[field] = camelData[field];
       }
 
-      // Try to find the unique constraint name from Prisma model
-      const uniqueKey = conflictFields.sort().map(f => f).join('_');
-      // Prisma uses camelCase fields joined with _ for compound unique names
-      // e.g. customer_id,product_id → customerId_productId
-      const compoundUniqueName = conflictFields.join('_');
+      // Use $transaction to prevent race condition on concurrent upserts
+      const result = await prisma.$transaction(async (tx: any) => {
+        const txModel = tx[this.modelName];
+        const existing = await txModel.findFirst({ where: whereClause });
 
-      // First, try to find existing record
-      const existing = await model.findFirst({
-        where: whereClause,
+        if (existing) {
+          const updateFields: Record<string, any> = { ...camelData };
+          for (const field of conflictFields) delete updateFields[field];
+          delete updateFields.id;
+          delete updateFields.createdAt;
+          for (const key of Object.keys(updateFields)) {
+            if (updateFields[key] === undefined) delete updateFields[key];
+          }
+          return await txModel.update({
+            where: { id: existing.id },
+            data: updateFields,
+            ...createOptions,
+          });
+        } else {
+          return await txModel.create({ data: camelData, ...createOptions });
+        }
       });
 
-      if (existing) {
-        // Update existing record
-        const updateFields: Record<string, any> = { ...camelData };
-        // Remove fields that are part of the unique constraint (they shouldn't change)
-        for (const field of conflictFields) {
-          delete updateFields[field];
-        }
-        // Also remove id and createdAt (they shouldn't change on update)
-        delete updateFields.id;
-        delete updateFields.createdAt;
-        // Remove undefined values
-        for (const key of Object.keys(updateFields)) {
-          if (updateFields[key] === undefined) delete updateFields[key];
-        }
-
-        const result = await model.update({
-          where: { id: existing.id },
-          data: updateFields,
-          ...createOptions,
-        });
-        return { data: toSnakeCaseDeep(result), error: null, count: 1 };
-      } else {
-        // Insert new record
-        const result = await model.create({ data: camelData, ...createOptions });
-        return { data: toSnakeCaseDeep(result), error: null, count: 1 };
-      }
+      return { data: toSnakeCaseDeep(result), error: null, count: 1 };
     } else {
       // No conflict fields — just insert (fallback)
       const result = await model.create({ data: camelData, ...createOptions });
@@ -922,10 +915,31 @@ class PostgrestQueryBuilder {
 
   // ─── BUILD PRISMA WHERE CLAUSE FROM FILTERS ────────────────
 
+  /**
+   * Parse SQL LIKE pattern to Prisma string filter.
+   * %test% → contains, test% → startsWith, %test → endsWith, test → equals
+   */
+  private parseLikePattern(pattern: string, caseInsensitive: boolean): Record<string, any> {
+    const startsWithPercent = pattern.startsWith('%');
+    const endsWithPercent = pattern.endsWith('%');
+    const cleaned = pattern.replace(/^%|%$/g, '');
+    const mode = caseInsensitive ? { mode: 'insensitive' as const } : {};
+
+    if (startsWithPercent && endsWithPercent) {
+      return { contains: cleaned, ...mode };
+    } else if (startsWithPercent) {
+      return { endsWith: cleaned, ...mode };
+    } else if (endsWithPercent) {
+      return { startsWith: cleaned, ...mode };
+    } else {
+      return { equals: cleaned, ...mode };
+    }
+  }
+
   private buildWhereClause(): Record<string, any> {
     const conditions: Record<string, any>[] = [];
-    let orConditions: any[] | null = null;
-    let andConditions: any[] | null = null;
+    const allOrConditions: any[][] = []; // BUG 3 FIX: accumulate ALL OR blocks
+    const allAndConditions: any[][] = []; // FIX: accumulate ALL AND blocks
 
     for (const filter of this.filters) {
       const camelField = snakeToCamel(filter.field);
@@ -950,13 +964,11 @@ class PostgrestQueryBuilder {
           conditions.push({ [camelField]: { lte: this.toPrismaValue(filter.value) } });
           break;
         case 'ilike': {
-          const pattern = filter.value as string;
-          conditions.push({ [camelField]: { contains: pattern.replace(/%/g, ''), mode: 'insensitive' } });
+          conditions.push({ [camelField]: this.parseLikePattern(filter.value as string, true) });
           break;
         }
         case 'like': {
-          const pattern = filter.value as string;
-          conditions.push({ [camelField]: { contains: pattern.replace(/%/g, '') } });
+          conditions.push({ [camelField]: this.parseLikePattern(filter.value as string, false) });
           break;
         }
         case 'in':
@@ -978,7 +990,7 @@ class PostgrestQueryBuilder {
               break;
             case 'like':
             case 'ilike':
-              notCondition[camelField] = { not: { contains: value.replace(/%/g, '') } };
+              notCondition[camelField] = { not: this.parseLikePattern(value as string, operator === 'ilike') };
               break;
             case 'in':
               notCondition[camelField] = { not: { in: value } };
@@ -990,10 +1002,10 @@ class PostgrestQueryBuilder {
           break;
         }
         case 'or':
-          orConditions = this.parseOrString(filter.value as string);
+          allOrConditions.push(this.parseOrString(filter.value as string));
           break;
         case 'and':
-          andConditions = this.parseOrString(filter.value as string);
+          allAndConditions.push(this.parseOrString(filter.value as string));
           break;
       }
     }
@@ -1004,21 +1016,23 @@ class PostgrestQueryBuilder {
       where = conditions.length === 1 ? conditions[0] : { AND: conditions };
     }
 
-    // Add OR conditions
-    if (orConditions && orConditions.length > 0) {
+    // Add OR conditions (flatten all accumulated OR blocks)
+    if (allOrConditions.length > 0) {
+      const flatOr = allOrConditions.flat();
       if (Object.keys(where).length > 0) {
-        where = { AND: [where, { OR: orConditions }] };
+        where = { AND: [where, { OR: flatOr }] };
       } else {
-        where = { OR: orConditions };
+        where = { OR: flatOr };
       }
     }
 
-    // Add AND conditions
-    if (andConditions && andConditions.length > 0) {
+    // Add AND conditions (flatten all accumulated AND blocks)
+    if (allAndConditions.length > 0) {
+      const flatAnd = allAndConditions.flat();
       if (Object.keys(where).length > 0) {
-        where = { AND: [where, ...andConditions] };
+        where = { AND: [where, ...flatAnd] };
       } else {
-        where = { AND: andConditions };
+        where = { AND: flatAnd };
       }
     }
 

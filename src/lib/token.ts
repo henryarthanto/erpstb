@@ -10,11 +10,15 @@ import crypto from 'crypto';
 import { getAuthSecret } from '@/lib/auth-secret';
 import { toCamelCase, camelToSnake } from '@/lib/supabase-helpers';
 
-// Cache for verified active users (TTL = 60s)
+// Check STB mode for cache tuning
+const IS_STB = process.env.STB_MODE === 'true' || process.env.STB_MODE === '1';
+
+// Cache for verified active users
 // Avoids hitting the DB on every request for the same user
+// IMPROVE 14: Tuned for hundreds of concurrent users
 const _userCache = new Map<string, { active: boolean; expiresAt: number }>();
-const USER_CACHE_TTL = 60_000; // 60 seconds
-const USER_CACHE_MAX_SIZE = 1000; // Prevent unbounded memory growth
+const USER_CACHE_TTL = IS_STB ? 120_000 : 300_000; // 2min STB / 5min standard
+const USER_CACHE_MAX_SIZE = IS_STB ? 500 : 2000; // Prevent unbounded memory growth
 
 /** Periodic cleanup of expired entries */
 function cleanupUserCache(): void {

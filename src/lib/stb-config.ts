@@ -35,19 +35,19 @@ export const TOTAL_RAM_MB = IS_STB ? 2048 : 8192;
 
 export const MEMORY_BUDGET = {
   /** Maximum V8 heap size for Next.js process */
-  maxHeapMB: IS_STB ? 384 : 1024,
+  maxHeapMB: IS_STB ? 512 : 1024,
 
   /** Memory guard: trigger cleanup when heap exceeds this growth */
-  heapGrowthThresholdMB: IS_STB ? 40 : 100,
+  heapGrowthThresholdMB: IS_STB ? 80 : 150,
 
   /** Memory guard: check interval */
-  memoryCheckIntervalMs: IS_STB ? 30_000 : 120_000,
+  memoryCheckIntervalMs: IS_STB ? 20_000 : 60_000,
 
   /** Critical debounce — min time between critical memory alerts */
-  criticalDebounceMs: IS_STB ? 60_000 : 300_000,
+  criticalDebounceMs: IS_STB ? 30_000 : 120_000,
 
   /** Heap pressure percent to trigger "under pressure" */
-  pressureThresholdPercent: IS_STB ? 90 : 95,
+  pressureThresholdPercent: IS_STB ? 85 : 92,
 };
 
 // =====================================================================
@@ -57,19 +57,19 @@ export const MEMORY_BUDGET = {
 export const DB_POOL = {
   /** Transaction pool (high concurrency queries) */
   tx: {
-    max: IS_STB ? 3 : 10,
-    min: IS_STB ? 1 : 1,
-    idleTimeoutMs: IS_STB ? 15_000 : 30_000,
+    max: IS_STB ? 10 : 25,
+    min: IS_STB ? 2 : 5,
+    idleTimeoutMs: IS_STB ? 10_000 : 20_000,
     connectionTimeoutMs: IS_STB ? 8_000 : 10_000,
-    maxLifetimeMs: IS_STB ? 1_800_000 : 3_600_000, // 30min vs 60min
+    maxLifetimeMs: IS_STB ? 600_000 : 1_800_000, // 10min vs 30min
   },
   /** Session pool (DDL, transactions, NOTIFY) */
   session: {
-    max: IS_STB ? 2 : 3,
+    max: IS_STB ? 3 : 5,
     min: 0,
-    idleTimeoutMs: IS_STB ? 15_000 : 60_000,
-    connectionTimeoutMs: IS_STB ? 15_000 : 30_000,
-    maxLifetimeMs: IS_STB ? 1_800_000 : 3_600_000,
+    idleTimeoutMs: IS_STB ? 10_000 : 30_000,
+    connectionTimeoutMs: IS_STB ? 10_000 : 20_000,
+    maxLifetimeMs: IS_STB ? 600_000 : 1_800_000,
   },
   /** Drain idle connections after this many ms of inactivity */
   drainIdleAfterMs: IS_STB ? 20_000 : 60_000,
