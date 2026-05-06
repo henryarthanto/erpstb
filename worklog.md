@@ -682,3 +682,40 @@ Stage Summary:
 - 2 new files created (api-timeout.ts, transaction-queue.ts)
 - Estimated capacity improvement: 50-100 tx/hr → 500-1000+ tx/hr
 - Estimated response time: 800ms-2s → 150-400ms
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Monitor page WebSocket red X — CPU/RAM STB & Supabase connection status
+
+Work Log:
+- Investigated StorageTab.tsx: was using /api/health (only returns Node.js process memory, NOT real CPU/RAM)
+- Found /api/system-stats endpoint already exists with real CPU/RAM/disk/temp data from /proc filesystem
+- Found supabase-info endpoint used SUPABASE_DB_URL (not set in .env) — should fallback to DATABASE_URL
+- Found Supabase "CONNECTED" badge was hardcoded green, not reflecting actual connection status
+- Found mergedDbMonitor didn't merge latency, connections, and serverInfo from db-monitor endpoint
+
+- Fix 1: StorageTab.tsx — Changed from /api/health to /api/system-stats for real system data
+  - Real CPU usagePercent (from /proc/stat), load average, temperature
+  - Real RAM usage (from /proc/meminfo) with swap info
+  - Real disk usage (from df)
+  - System uptime from /proc/uptime
+- Fix 2: StorageTab.tsx — Dynamic connection status for CPU/RAM STB monitor
+  - Shows green CONNECTED when system-stats API succeeds
+  - Shows red DISCONNECTED with X icon when API fails
+  - Replaces static POLLING badge
+- Fix 3: StorageTab.tsx — Dynamic connection status for Supabase monitor
+  - Shows green CONNECTED when supabase-info API succeeds
+  - Shows red DISCONNECTED with X icon when API fails
+  - Replaces hardcoded green badge
+- Fix 4: /api/storage/supabase-info/route.ts — Added DATABASE_URL fallback for dbUrl parsing
+- Fix 5: /api/storage/route.ts — Added DATABASE_URL fallback for supabaseDbUrl parsing
+- Fix 6: StorageTab.tsx — Properly merge latency, connections, serverInfo, queryPerformance from db-monitor endpoint
+- Lint clean, dev server compiles and runs
+- Pushed to GitHub: 0de13b5
+
+Stage Summary:
+- Monitor page now shows REAL CPU, RAM, Disk, Temperature data from /proc filesystem
+- Both connection status badges (STB + Supabase) are dynamic (reflect actual API status)
+- AWS host/region/port info now properly parsed from DATABASE_URL
+- DB latency, connection counts, and server info properly merged into monitor dashboard
+- 3 files changed, 75 insertions, 44 deletions
