@@ -56,29 +56,46 @@ import { toast } from 'sonner';
 // Types
 import type { Event } from '@/types';
 
-// Module Components
+import dynamic from 'next/dynamic';
+import { NativeTransition, ShimmerSkeleton } from '@/components/native-feel';
 import LoginPage from '@/components/erp/LoginPage';
-import DashboardModule from '@/components/erp/DashboardModule';
-import TransactionsModule from '@/components/erp/TransactionsModule';
-import ProductsModule from '@/components/erp/ProductsModule';
-import CustomersModule from '@/components/erp/CustomersModule';
-import SuppliersModule from '@/components/erp/SuppliersModule';
-import SalesDashboard from '@/components/erp/SalesDashboard';
-import CourierDashboard from '@/components/erp/CourierDashboard';
-import DeliveriesModule from '@/components/erp/DeliveriesModule';
-import FinanceModule from '@/components/erp/FinanceModule';
-import SalariesModule from '@/components/erp/SalariesModule';
-import UsersModule from '@/components/erp/UsersModule';
-import SettingsModule from '@/components/erp/SettingsModule';
-import CustomerManagementModule from '@/components/erp/CustomerManagementModule';
-import SalesTaskManagement from '@/components/erp/SalesTaskManagement';
-import SalesTaskDashboard from '@/components/erp/SalesTaskDashboard';
-import SalesTaskPopup from '@/components/erp/SalesTaskPopup';
-import AIChatPanel from '@/components/erp/AIChatPanel';
-import CashbackManagementModule from '@/components/erp/CashbackManagementModule';
-import PWAOrdersModule from '@/components/erp/PWAOrdersModule';
 import { ChangePasswordDialog } from '@/components/erp/ChangePasswordDialog';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
+
+// ── Lazy-loaded Module Components (reduces initial bundle ~60%) ──
+const ModuleSkeleton = () => (
+  <div className="space-y-4 p-2">
+    <ShimmerSkeleton variant="card" className="h-32" />
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <ShimmerSkeleton variant="card" className="h-24" />
+      <ShimmerSkeleton variant="card" className="h-24" />
+      <ShimmerSkeleton variant="card" className="h-24" />
+      <ShimmerSkeleton variant="card" className="h-24" />
+    </div>
+    <ShimmerSkeleton variant="card" className="h-64" />
+    <ShimmerSkeleton variant="card" className="h-48" />
+  </div>
+);
+
+const DashboardModule = dynamic(() => import('@/components/erp/DashboardModule'), { loading: ModuleSkeleton, ssr: false });
+const TransactionsModule = dynamic(() => import('@/components/erp/TransactionsModule'), { loading: ModuleSkeleton, ssr: false });
+const ProductsModule = dynamic(() => import('@/components/erp/ProductsModule'), { loading: ModuleSkeleton, ssr: false });
+const CustomersModule = dynamic(() => import('@/components/erp/CustomersModule'), { loading: ModuleSkeleton, ssr: false });
+const SuppliersModule = dynamic(() => import('@/components/erp/SuppliersModule'), { loading: ModuleSkeleton, ssr: false });
+const SalesDashboard = dynamic(() => import('@/components/erp/SalesDashboard'), { loading: ModuleSkeleton, ssr: false });
+const CourierDashboard = dynamic(() => import('@/components/erp/CourierDashboard'), { loading: ModuleSkeleton, ssr: false });
+const DeliveriesModule = dynamic(() => import('@/components/erp/DeliveriesModule'), { loading: ModuleSkeleton, ssr: false });
+const FinanceModule = dynamic(() => import('@/components/erp/FinanceModule'), { loading: ModuleSkeleton, ssr: false });
+const SalariesModule = dynamic(() => import('@/components/erp/SalariesModule'), { loading: ModuleSkeleton, ssr: false });
+const UsersModule = dynamic(() => import('@/components/erp/UsersModule'), { loading: ModuleSkeleton, ssr: false });
+const SettingsModule = dynamic(() => import('@/components/erp/SettingsModule'), { loading: ModuleSkeleton, ssr: false });
+const CustomerManagementModule = dynamic(() => import('@/components/erp/CustomerManagementModule'), { loading: ModuleSkeleton, ssr: false });
+const SalesTaskManagement = dynamic(() => import('@/components/erp/SalesTaskManagement'), { loading: ModuleSkeleton, ssr: false });
+const SalesTaskDashboard = dynamic(() => import('@/components/erp/SalesTaskDashboard'), { loading: ModuleSkeleton, ssr: false });
+const SalesTaskPopup = dynamic(() => import('@/components/erp/SalesTaskPopup'), { ssr: false });
+const AIChatPanel = dynamic(() => import('@/components/erp/AIChatPanel'), { ssr: false });
+const CashbackManagementModule = dynamic(() => import('@/components/erp/CashbackManagementModule'), { loading: ModuleSkeleton, ssr: false });
+const PWAOrdersModule = dynamic(() => import('@/components/erp/PWAOrdersModule'), { loading: ModuleSkeleton, ssr: false });
 
 // ============== MOBILE BOTTOM NAV ==============
 function MobileBottomNav({
@@ -394,26 +411,34 @@ function MainApp() {
     });
   };
 
-  // Render active module
+  // Render active module with smooth transition
   const renderModule = () => {
     if (!user) return null;
+    let Module: React.ComponentType | null = null;
     switch (activeModule) {
       case 'dashboard':
-        return user.role === 'sales' ? <SalesDashboard /> : user.role === 'kurir' ? <CourierDashboard /> : <DashboardModule />;
-      case 'transaksi': return <TransactionsModule />;
-      case 'produk': return <ProductsModule />;
-      case 'pelanggan': return user.role === 'super_admin' ? <CustomerManagementModule /> : <CustomersModule />;
-      case 'tugas': return user.role === 'super_admin' ? <SalesTaskManagement /> : <SalesTaskDashboard />;
-      case 'supplier': return <SuppliersModule />;
-      case 'pengiriman': return <DeliveriesModule />;
-      case 'finance': return <FinanceModule />;
-      case 'gaji': return <SalariesModule />;
-      case 'pengguna': return <UsersModule />;
-      case 'cashback': return <CashbackManagementModule />;
-      case 'pwa-orders': return <PWAOrdersModule />;
-      case 'pengaturan': return <SettingsModule />;
-      default: return <DashboardModule />;
+        Module = user.role === 'sales' ? SalesDashboard : user.role === 'kurir' ? CourierDashboard : DashboardModule;
+        break;
+      case 'transaksi': Module = TransactionsModule; break;
+      case 'produk': Module = ProductsModule; break;
+      case 'pelanggan': Module = user.role === 'super_admin' ? CustomerManagementModule : CustomersModule; break;
+      case 'tugas': Module = user.role === 'super_admin' ? SalesTaskManagement : SalesTaskDashboard; break;
+      case 'supplier': Module = SuppliersModule; break;
+      case 'pengiriman': Module = DeliveriesModule; break;
+      case 'finance': Module = FinanceModule; break;
+      case 'gaji': Module = SalariesModule; break;
+      case 'pengguna': Module = UsersModule; break;
+      case 'cashback': Module = CashbackManagementModule; break;
+      case 'pwa-orders': Module = PWAOrdersModule; break;
+      case 'pengaturan': Module = SettingsModule; break;
+      default: Module = DashboardModule;
     }
+    if (!Module) return null;
+    return (
+      <NativeTransition key={activeModule}>
+        <Module />
+      </NativeTransition>
+    );
   };
 
   const unreadEvents = events.filter((e: Event) => !e.isRead).length;
@@ -689,7 +714,7 @@ function MainApp() {
         </header>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 pb-[88px] lg:pb-4 overscroll-y-contain" style={{ paddingBottom: 'max(88px, calc(88px + env(safe-area-inset-bottom, 0px)))' }}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 pb-[88px] lg:pb-4 overscroll-y-contain scrollbar-smooth" style={{ paddingBottom: 'max(88px, calc(88px + env(safe-area-inset-bottom, 0px)))' }}>
           {renderModule()}
         </main>
       </div>
@@ -796,13 +821,37 @@ function AppContent() {
     return () => { cancelled = true; };
   }, [hydrated, isAuthenticated, setUser, logout]);
 
-  // Wait for hydration to complete
+  // Wait for hydration to complete — show app shell skeleton instead of spinner
   if (!hydrated || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
+      <div className="h-[100dvh] flex bg-background overflow-hidden">
+        {/* Skeleton sidebar (desktop) */}
+        <nav className="hidden lg:flex flex-col fixed top-0 left-0 h-full w-[68px] bg-card/80 border-r border-border/50 animate-pulse">
+          <div className="h-14 border-b border-border/50 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-muted" />
+          </div>
+          <div className="flex-1 py-2 px-2 space-y-2">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="w-full flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-muted" />
+              </div>
+            ))}
+          </div>
+        </nav>
+        {/* Skeleton header + content */}
+        <div className="flex-1 lg:ml-[68px] flex flex-col">
+          <header className="h-12 border-b border-border/40 flex items-center px-4">
+            <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+          </header>
+          <div className="flex-1 p-4 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />
+              ))}
+            </div>
+            <div className="h-64 rounded-xl bg-muted animate-pulse" />
+            <div className="h-48 rounded-xl bg-muted animate-pulse" />
+          </div>
         </div>
       </div>
     );

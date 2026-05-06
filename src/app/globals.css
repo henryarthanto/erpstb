@@ -240,3 +240,319 @@
     }
   }
 }
+
+/* ==========================================================================
+   Mobile-Native Feel Improvements
+   ========================================================================== */
+
+/* --- 1. Smooth scrolling with momentum ----------------------------------- */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Allow momentum scrolling on every scrollable container */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* --- 2. Touch action optimizations --------------------------------------- */
+/* Prevent overscroll bounce on fixed / sticky positioned elements */
+@layer utilities {
+  .touch-none-fixed {
+    position: fixed;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  .touch-pan-y {
+    touch-action: pan-y;
+  }
+  .touch-pan-x {
+    touch-action: pan-x;
+  }
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+}
+
+/* --- 3. Tap highlight removal for native feel ---------------------------- */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+}
+
+/* --- 4. Selection prevention on interactive elements ---------------------- */
+@layer utilities {
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .select-text {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* Buttons, links, and controls should not show text selection cursor */
+@layer base {
+  button,
+  [role="button"],
+  a,
+  [role="link"],
+  summary,
+  input[type="range"],
+  input[type="checkbox"],
+  input[type="radio"],
+  label[for] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* --- 5. Smooth scrollbar styling for webkit ------------------------------ */
+@layer utilities {
+  .scrollbar-smooth {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.78 0 0) transparent;
+    transition: scrollbar-color 0.2s ease;
+  }
+  .scrollbar-smooth:hover {
+    scrollbar-color: oklch(0.65 0 0) transparent;
+  }
+  .scrollbar-smooth::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  .scrollbar-smooth::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-smooth::-webkit-scrollbar-thumb {
+    background: oklch(0.78 0 0);
+    border-radius: 9999px;
+    transition: background 0.2s ease;
+  }
+  .scrollbar-smooth::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.65 0 0);
+  }
+}
+
+/* --- 6. Pull-to-refresh visual indicator --------------------------------- */
+@layer utilities {
+  .pull-indicator {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100%);
+    z-index: 9999;
+    padding: 0.5rem 1.25rem;
+    border-radius: 0 0 0.75rem 0.75rem;
+    background: oklch(0.97 0 0);
+    color: oklch(0.4 0 0);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    box-shadow: 0 4px 12px oklch(0 0 0 / 8%);
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease;
+    pointer-events: none;
+  }
+  .pull-indicator.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+  .pull-indicator.refreshing {
+    animation: pull-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes pull-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* --- 7. Page transition animation classes -------------------------------- */
+@layer utilities {
+  /* Slide in from right (forward navigation) */
+  .page-slide-in {
+    animation: page-slide-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  /* Slide out to left (back navigation) */
+  .page-slide-out {
+    animation: page-slide-out 0.25s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  /* Fade in with subtle scale (content appearing) */
+  .page-fade-in {
+    animation: page-fade-in 0.35s ease-out both;
+  }
+  /* Fade out */
+  .page-fade-out {
+    animation: page-fade-out 0.2s ease-in both;
+  }
+}
+
+@keyframes page-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes page-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes page-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* --- 8. Safe area insets for notched phones ------------------------------ */
+@layer utilities {
+  /* Full safe area padding on all sides */
+  .safe-area {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  /* Safe area margin for fixed bottom bars */
+  .safe-bottom-push {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* Fixed bottom bar covering full safe area */
+  .fixed-bottom-safe {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* Full-height container respecting safe area */
+  .h-safe {
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* --- 9. Haptic feedback utility class ------------------------------------ */
+/* Apply to interactive elements; pair with JS navigator.vibrate() calls */
+@layer utilities {
+  .haptic {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
+  }
+}
+
+/* --- 10. Native-feel button press (active:scale-95 transition) -----------*/
+@layer utilities {
+  .btn-press {
+    transition: transform 0.15s cubic-bezier(0.32, 0.72, 0, 1),
+                box-shadow 0.15s ease,
+                background-color 0.15s ease;
+    will-change: transform;
+    transform-origin: center;
+  }
+  .btn-press:active {
+    transform: scale(0.95);
+  }
+}
+
+/* --- 11. Backdrop blur for modals / overlays ----------------------------- */
+@layer utilities {
+  .backdrop-blur-overlay {
+    backdrop-filter: blur(8px) saturate(180%);
+    -webkit-backdrop-filter: blur(8px) saturate(180%);
+    background-color: oklch(0 0 0 / 40%);
+  }
+  .backdrop-blur-light {
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    background-color: oklch(1 0 0 / 70%);
+  }
+  .backdrop-blur-dark {
+    backdrop-filter: blur(16px) saturate(200%);
+    -webkit-backdrop-filter: blur(16px) saturate(200%);
+    background-color: oklch(0 0 0 / 60%);
+  }
+}
+
+/* --- 12. Skeleton shimmer animation (moving gradient) -------------------- */
+@layer utilities {
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: oklch(0.92 0 0);
+    border-radius: 0.375rem;
+  }
+  .dark .skeleton {
+    background: oklch(0.25 0 0);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      oklch(1 0 0 / 0%) 20%,
+      oklch(1 0 0 / 40%) 50%,
+      oklch(1 0 0 / 0%) 80%,
+      transparent 100%
+    );
+    animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  }
+  .dark .skeleton::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      oklch(1 0 0 / 0%) 20%,
+      oklch(1 0 0 / 8%) 50%,
+      oklch(1 0 0 / 0%) 80%,
+      transparent 100%
+    );
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
