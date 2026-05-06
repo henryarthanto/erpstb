@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
 
     // Database metadata from Supabase connection string
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
+    const supabaseDbUrl = process.env.SUPABASE_DB_URL || process.env.DIRECT_URL || process.env.DATABASE_URL || '';
     // Parse host and region from connection URL
     let dbHost = '';
     let dbRegion = 'ap-southeast-1';

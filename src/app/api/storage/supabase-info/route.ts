@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     // ── Parse Supabase project info from env vars ─────────────────────────
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const dbUrl = process.env.SUPABASE_DB_URL || '';
+    const dbUrl = process.env.SUPABASE_DB_URL || process.env.DIRECT_URL || process.env.DATABASE_URL || '';
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
     let projectRef = '';

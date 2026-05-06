@@ -70,14 +70,16 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   const { user } = useAuthStore();
 
   // ═══════════════════════════════════════════════════════════════
-  // HTTP POLLING — system stats via /api/health (every 5s)
+  // HTTP POLLING — system stats via /api/system-stats (every 5s)
+  // Returns real CPU, RAM, disk, temperature from /proc filesystem
   // ═══════════════════════════════════════════════════════════════
   const defaultSystemData = {
     cpu: {
       usagePercent: 0,
       modelName: 'Server',
       cores: 1,
-      loadAvg: { '1min': 0, '5min': 0, '15min': 0 },
+      loadAvg: null as any,
+      temp: null as number | null,
       uptimeSeconds: 0,
     },
     ram: {
@@ -95,6 +97,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   };
 
   const [systemData, setSystemData] = useState<any>(defaultSystemData);
+  const [systemStatsOk, setSystemStatsOk] = useState(false);
 
   // Default dbMonitorData shape so mergedDbMonitor works immediately
   const defaultDbMonitorData = {
@@ -113,50 +116,60 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
 
   const [dbMonitorData] = useState<any>(defaultDbMonitorData);
 
-  // Health polling query — maps /api/health response to systemData shape
-  const { data: healthData } = useQuery({
-    queryKey: ['health-poll'],
+  // System stats polling — real CPU/RAM/disk/temp from /proc
+  const { data: systemStatsData, isSuccess: systemStatsSuccess } = useQuery({
+    queryKey: ['system-stats-poll'],
     queryFn: async () => {
-      const json = await apiFetch<any>('/api/health');
-      return json;
+      const json = await apiFetch<{ success: boolean; data: any; error?: string }>('/api/system-stats');
+      if (!json.success) throw new Error(json.error || 'System stats failed');
+      return json.data;
     },
     refetchInterval: 5000,
-    retry: 1,
+    retry: 2,
     staleTime: 5_000,
   });
 
-  // Map health response to systemData
+  // Track system stats connection status
   useEffect(() => {
-    if (healthData) {
-      const mem = healthData.memory || {};
-      const rssBytes = (mem.rss_mb || 0) * 1024 * 1024;
-      const heapPercent = mem.heap_percent ?? 0;
-      const totalEstimate = rssBytes * 2;
-      const uptime = healthData.uptime || 0;
+    setSystemStatsOk(!!systemStatsSuccess && !!systemStatsData);
+  }, [systemStatsSuccess, systemStatsData]);
+
+  // Map system-stats response to systemData shape
+  useEffect(() => {
+    if (systemStatsData) {
+      const cpu = systemStatsData.cpu || {};
+      const ram = systemStatsData.ram || {};
+      const disk = systemStatsData.disk || null;
 
       setSystemData({
         cpu: {
-          usagePercent: 0,
-          modelName: 'Server',
-          cores: 1,
-          loadAvg: { '1min': 0, '5min': 0, '15min': 0 },
-          uptimeSeconds: uptime,
+          usagePercent: cpu.usagePercent ?? 0,
+          modelName: cpu.modelName || 'Server',
+          cores: cpu.cores || 1,
+          loadAvg: cpu.loadAvg || null,
+          temp: cpu.temp ?? null,
+          uptimeSeconds: cpu.uptimeSeconds || 0,
         },
         ram: {
-          total: totalEstimate,
-          used: rssBytes,
-          available: totalEstimate - rssBytes,
-          percent: heapPercent,
-          cached: 0,
-          buffers: 0,
-          swapTotal: 0,
-          swapUsed: 0,
-          swapPercent: 0,
+          total: ram.total || 0,
+          used: ram.used || 0,
+          available: ram.available || 0,
+          percent: ram.percent || 0,
+          cached: ram.cached || 0,
+          buffers: ram.buffers || 0,
+          swapTotal: ram.swapTotal || 0,
+          swapUsed: ram.swapUsed || 0,
+          swapPercent: ram.swapPercent || 0,
         },
-        disk: null,
+        disk: disk ? {
+          total: disk.total,
+          used: disk.used,
+          available: disk.available,
+          percent: disk.percent,
+        } : null,
       });
     }
-  }, [healthData]);
+  }, [systemStatsData]);
 
   const systemLoading = false;
   const dbMonitorLoading = false;
@@ -188,7 +201,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   });
 
   // Supabase Storage & AWS info (refresh every 30s)
-  const { data: supabaseInfo } = useQuery({
+  const { data: supabaseInfo, isSuccess: supabaseInfoOk } = useQuery({
     queryKey: ['supabase-info'],
     queryFn: async () => {
       const json = await apiFetch<{ success: boolean; data: any; error?: string }>('/api/storage/supabase-info');
@@ -196,7 +209,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
       return json.data;
     },
     refetchInterval: 30000,
-    retry: 1,
+    retry: 2,
     staleTime: 30_000,
   });
 
@@ -211,6 +224,10 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
       topTables: dbMonitorStatic.topTables || dbMonitorData.topTables,
       rowCounts: dbMonitorStatic.rowCounts || dbMonitorData.rowCounts,
       diskUsage: dbMonitorStatic.diskUsage || dbMonitorData.diskUsage,
+      latency: dbMonitorStatic.latency || dbMonitorData.latency,
+      connections: dbMonitorStatic.connections || dbMonitorData.connections,
+      serverInfo: dbMonitorStatic.serverInfo || dbMonitorData.serverInfo,
+      queryPerformance: dbMonitorStatic.queryPerformance || dbMonitorData.queryPerformance,
     };
   })();
 
@@ -559,12 +576,19 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="w-4 h-4 text-emerald-500" />
                 Monitor Server STB
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                  <RefreshCw className="w-3 h-3 text-amber-500" />
-                  <span className="text-amber-600 dark:text-amber-400">POLLING</span>
-                </span>
+                {systemStatsOk ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-emerald-600 dark:text-emerald-400">CONNECTED</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                    <X className="w-3 h-3 text-red-500" />
+                    <span className="text-red-600 dark:text-red-400">DISCONNECTED</span>
+                  </span>
+                )}
               </CardTitle>
-              <CardDescription>Monitoring CPU & RAM via HTTP polling (5s)</CardDescription>
+              <CardDescription>Monitoring CPU, RAM, Disk & Suhu via HTTP polling (5s)</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -795,10 +819,17 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
               <CardTitle className="text-base flex items-center gap-2">
                 <Cloud className="w-4 h-4 text-violet-500" />
                 Supabase Storage & AWS Server
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-emerald-600 dark:text-emerald-400">CONNECTED</span>
-                </span>
+                {supabaseInfoOk && supabaseInfo ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-emerald-600 dark:text-emerald-400">CONNECTED</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                    <X className="w-3 h-3 text-red-500" />
+                    <span className="text-red-600 dark:text-red-400">DISCONNECTED</span>
+                  </span>
+                )}
               </CardTitle>
               <CardDescription>Monitoring Supabase Storage & AWS Server via HTTP</CardDescription>
             </div>
