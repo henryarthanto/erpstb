@@ -13,9 +13,15 @@ echo "=========================================="
 echo "  Razkindo ERP - STB Direct Deploy"
 echo "=========================================="
 
-# 1. Cek Node.js
-if ! command -v node &> /dev/null; then
-    echo "[!] Node.js tidak ditemukan. Install dulu..."
+# 1. Cek bun (utamakan) atau Node.js
+USE_BUN=false
+if command -v bun &> /dev/null; then
+    USE_BUN=true
+    echo "[OK] bun $(bun --version)"
+elif command -v node &> /dev/null; then
+    echo "[OK] Node.js $(node --version)"
+else
+    echo "[!] Node.js/bun tidak ditemukan. Install dulu..."
     if command -v apt &> /dev/null; then
         curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
         apt-get install -y nodejs
@@ -25,9 +31,8 @@ if ! command -v node &> /dev/null; then
         echo "[ERROR] Tidak bisa install Node.js otomatis. Install manual dulu."
         exit 1
     fi
+    echo "[OK] Node.js $(node --version)"
 fi
-
-echo "[OK] Node.js $(node --version)"
 
 # 2. Buat swap kalau RAM kurang (minimal 2GB untuk build)
 TOTAL_MEM=$(free -m 2>/dev/null | awk '/Mem:/{print $2}' || echo "2048")
@@ -48,19 +53,31 @@ cd "$APP_DIR"
 # 3. Install dependencies
 echo ""
 echo "[1/4] Install dependencies..."
-npm install --legacy-peer-deps --production=false 2>&1 | tail -5
+if [ "$USE_BUN" = true ]; then
+    bun install 2>&1 | tail -5
+else
+    npm install --legacy-peer-deps --production=false 2>&1 | tail -5
+fi
 
 # 4. Generate Prisma client
 echo ""
 echo "[2/4] Generate Prisma client..."
-npx prisma generate 2>&1 | tail -3
+if [ "$USE_BUN" = true ]; then
+    bunx prisma generate 2>&1 | tail -3
+else
+    npx prisma generate 2>&1 | tail -3
+fi
 
 # 5. Build Next.js (standalone)
 echo ""
 echo "[3/4] Build Next.js (ini bisa 5-15 menit)..."
 export NODE_OPTIONS="--max-old-space-size=1536"
 export NEXT_TELEMETRY_DISABLED=1
-npm run build 2>&1 | tail -10
+if [ "$USE_BUN" = true ]; then
+    bun run build 2>&1 | tail -10
+else
+    npm run build 2>&1 | tail -10
+fi
 
 # 6. Stop service lama
 echo ""
