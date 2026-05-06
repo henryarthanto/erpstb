@@ -624,3 +624,25 @@ Stage Summary:
 - CI/CD workflow at `.github/workflows/docker-publish.yml` - builds multi-arch (amd64+arm64)
 - Image: ghcr.io/henryarthanto/razkindo-erp:latest
 - Fallback: `docker build -t razkindo-erp:latest .` on STB if CI/CD fails
+
+---
+Task ID: 2-a
+Agent: Main Agent
+Task: Fix monitoring WS red X + dashboard chart + product null deref
+
+Work Log:
+- Identified root cause: StorageTab.tsx depends on monitor-ws WebSocket service (port 3004) which never runs
+- Found 98 dashboard chart failures from SQL GROUP BY error
+- Found PATCH /api/products null dereference (2 failures)
+- Fixed StorageTab.tsx: Replaced WebSocket with HTTP polling via /api/health (5s interval)
+  - Removed socket.io-client dependency
+  - Changed LIVE/OFFLINE badges to static POLLING (amber) and CONNECTED (green)
+  - Removed WS ✓/✗ badge from both cards
+  - Added default system data so UI never shows loading forever
+- Fixed dashboard chart SQL: Changed TO_CHAR to transaction_date::date for GROUP BY
+- Fixed products PATCH: Added null guard returning 404 before accessing .name
+
+Stage Summary:
+- Committed 17c85b6, pushed to GitHub
+- 3 files changed: StorageTab.tsx, dashboard/route.ts, products/[id]/route.ts
+- Lint clean (2 pre-existing errors in keep-alive.js unrelated)
