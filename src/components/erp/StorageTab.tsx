@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
@@ -39,8 +39,6 @@ import {
   Clock,
   Activity,
   Zap,
-  Wifi,
-  WifiOff,
   Cloud,
   Globe,
 } from 'lucide-react';
@@ -52,16 +50,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingFallback } from '@/components/error-boundary';
-import { io, Socket } from 'socket.io-client';
-
-// Helper: format bytes (used in WebSocket data mapping)
-function formatBytesFromNum(bytes: number): string {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+// WebSocket removed — using HTTP polling via /api/health
 
 // Table definitions for data browser
 const DATA_TABLES = [
@@ -81,141 +70,96 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   const { user } = useAuthStore();
 
   // ═══════════════════════════════════════════════════════════════
-  // WEBSOCKET — realtime monitoring via socket.io (port 3004)
-  // Replaces polling: system-stats (1s) + database-monitor (5s)
+  // HTTP POLLING — system stats via /api/health (every 5s)
   // ═══════════════════════════════════════════════════════════════
-  const [systemData, setSystemData] = useState<any>(null);
-  const [dbMonitorData, setDbMonitorData] = useState<any>(null);
-  const [wsConnected, setWsConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
-  const [supabaseLatency, setSupabaseLatency] = useState<number | null>(null);
+  const defaultSystemData = {
+    cpu: {
+      usagePercent: 0,
+      modelName: 'Server',
+      cores: 1,
+      loadAvg: { '1min': 0, '5min': 0, '15min': 0 },
+      uptimeSeconds: 0,
+    },
+    ram: {
+      total: 0,
+      used: 0,
+      available: 0,
+      percent: 0,
+      cached: 0,
+      buffers: 0,
+      swapTotal: 0,
+      swapUsed: 0,
+      swapPercent: 0,
+    },
+    disk: null as any,
+  };
 
+  const [systemData, setSystemData] = useState<any>(defaultSystemData);
+
+  // Default dbMonitorData shape so mergedDbMonitor works immediately
+  const defaultDbMonitorData = {
+    database: { sizeBytes: 0, sizePretty: '—', engine: 'PostgreSQL' },
+    indexes: { sizePretty: '—' },
+    topTables: [],
+    rowCounts: {},
+    serverInfo: { dbVersion: '—', uptime: '—', uptimeSeconds: 0, maxConnections: 100 },
+    connections: { current: 0, maxAllowed: 100, percent: 0 },
+    queryPerformance: { totalTransactions: 0, totalRollbacks: 0, deadlocks: 0 },
+    processlist: { total: 0, active: 0, idle: 0, activeQueries: [] },
+    latency: { dbLatencyMs: undefined as number | undefined },
+    diskUsage: null,
+    source: 'http-polling' as const,
+  };
+
+  const [dbMonitorData] = useState<any>(defaultDbMonitorData);
+
+  // Health polling query — maps /api/health response to systemData shape
+  const { data: healthData } = useQuery({
+    queryKey: ['health-poll'],
+    queryFn: async () => {
+      const json = await apiFetch<any>('/api/health');
+      return json;
+    },
+    refetchInterval: 5000,
+    retry: 1,
+    staleTime: 5_000,
+  });
+
+  // Map health response to systemData
   useEffect(() => {
-    const socket = io('/?XTransformPort=3004', {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
-    });
+    if (healthData) {
+      const mem = healthData.memory || {};
+      const rssBytes = (mem.rss_mb || 0) * 1024 * 1024;
+      const heapPercent = mem.heap_percent ?? 0;
+      const totalEstimate = rssBytes * 2;
+      const uptime = healthData.uptime || 0;
 
-    socketRef.current = socket;
+      setSystemData({
+        cpu: {
+          usagePercent: 0,
+          modelName: 'Server',
+          cores: 1,
+          loadAvg: { '1min': 0, '5min': 0, '15min': 0 },
+          uptimeSeconds: uptime,
+        },
+        ram: {
+          total: totalEstimate,
+          used: rssBytes,
+          available: totalEstimate - rssBytes,
+          percent: heapPercent,
+          cached: 0,
+          buffers: 0,
+          swapTotal: 0,
+          swapUsed: 0,
+          swapPercent: 0,
+        },
+        disk: null,
+      });
+    }
+  }, [healthData]);
 
-    socket.on('connect', () => {
-      console.log('[Monitor] WebSocket connected');
-      setWsConnected(true);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('[Monitor] WebSocket disconnected');
-      setWsConnected(false);
-    });
-
-    socket.on('monitor:data', (data: { systemStats: any; pgStats: any; supabaseRestLatencyMs?: number; timestamp: string }) => {
-      if (data.systemStats) {
-        // Map WebSocket system stats to the shape the UI expects
-        const s = data.systemStats;
-        const mem = s.memory || {};
-        const cpu = s.cpu || {};
-        const disk = s.disk || {};
-        const load = s.loadAvg || {};
-        const up = s.uptime || {};
-        setSystemData({
-          cpu: {
-            usagePercent: cpu.usagePercent ?? 0,
-            modelName: cpu.model || 'Unknown',
-            cores: load.total || 4,
-            temp: cpu.temperature,
-            loadAvg: {
-              '1min': load.load1 || 0,
-              '5min': load.load5 || 0,
-              '15min': load.load15 || 0,
-            },
-            uptimeSeconds: up.uptimeSeconds || 0,
-          },
-          ram: {
-            total: mem.memTotal || 0,
-            used: (mem.memTotal || 0) - (mem.memAvailable || 0),
-            available: mem.memAvailable || 0,
-            percent: mem.memUsedPercent || 0,
-            cached: mem.cached || 0,
-            buffers: mem.buffers || 0,
-            swapTotal: mem.swapTotal || 0,
-            swapUsed: mem.swapUsed || 0,
-            swapPercent: mem.swapTotal > 0 ? Math.round((mem.swapUsed / mem.swapTotal) * 100) : 0,
-          },
-          disk: disk.size ? {
-            total: disk.size,
-            used: disk.used,
-            available: disk.available,
-            percent: disk.usedPercent,
-          } : null,
-        });
-      }
-      if (data.pgStats) {
-        // Map WebSocket PostgreSQL stats to the shape the UI expects
-        const m = data.pgStats;
-        const conn = m.connections || {};
-        const q = m.queries || {};
-        const activeQueries = (m.processlist || []).filter((p: any) => p.state === 'active');
-        const idleConns = (m.processlist || []).filter((p: any) => p.state === 'idle').length;
-
-        setDbMonitorData({
-          database: {
-            sizeBytes: 0, // will be fetched from API if needed
-            sizePretty: '—',
-            engine: 'PostgreSQL',
-          },
-          indexes: { sizePretty: '—' },
-          topTables: [],
-          rowCounts: {},
-          serverInfo: {
-            dbVersion: m.version || 'Unknown',
-            uptime: m.uptime ? `${Math.floor(m.uptime / 86400)}d ${Math.floor((m.uptime % 86400) / 3600)}h ${Math.floor((m.uptime % 3600) / 60)}m` : '—',
-            uptimeSeconds: m.uptime,
-            maxConnections: conn.maxConnections || 100,
-          },
-          connections: {
-            current: conn.current || 0,
-            maxAllowed: conn.maxConnections || 100,
-            percent: conn.maxConnections ? Math.round(((conn.current || 0) / conn.maxConnections) * 100) : 0,
-          },
-          queryPerformance: {
-            totalTransactions: q.totalTransactions || 0,
-            totalRollbacks: q.totalRollbacks || 0,
-            deadlocks: q.deadlocks || 0,
-          },
-          processlist: {
-            total: (m.processlist || []).length,
-            active: activeQueries.length,
-            idle: idleConns,
-            activeQueries,
-          },
-          latency: { dbLatencyMs: m.latencyMs },
-          diskUsage: null,
-          source: 'postgresql-ws',
-          timestamp: data.timestamp,
-        });
-      }
-      // Supabase REST API latency (STB → AWS)
-      if (data.supabaseRestLatencyMs != null) {
-        setSupabaseLatency(data.supabaseRestLatencyMs);
-      }
-    });
-
-    socket.on('connect_error', (err) => {
-      console.warn('[Monitor] WebSocket connect_error:', err.message);
-      setWsConnected(false);
-    });
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, []);
-
-  const systemLoading = !systemData;
-  const dbMonitorLoading = !dbMonitorData;
+  const systemLoading = false;
+  const dbMonitorLoading = false;
 
   // Storage data (still HTTP — not realtime)
   const { data: storageData, isLoading: storageLoading, isError: storageError, refetch: refetchStorage } = useQuery({
@@ -256,7 +200,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
     staleTime: 30_000,
   });
 
-  // Merge static DB size data into WebSocket dbMonitorData
+  // Merge static DB size data into HTTP dbMonitorData
   const mergedDbMonitor = (() => {
     if (!dbMonitorData) return null;
     if (!dbMonitorStatic) return dbMonitorData;
@@ -423,7 +367,7 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   const cleanable = storageData?.cleanable;
   const tableCounts = storageData?.database?.tableCounts;
 
-  // PostgreSQL monitor data (merged: realtime from WebSocket + static from HTTP)
+  // PostgreSQL monitor data (merged: HTTP polling + static)
   const dbQuota = mergedDbMonitor?.database;
   const topTables = mergedDbMonitor?.topTables;
   const rowCounts = mergedDbMonitor?.rowCounts;
@@ -564,11 +508,11 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
   };
 
   // Don't block the whole page with loading - show sections independently
-  if (storageLoading && systemLoading) {
+  if (storageLoading) {
     return <LoadingFallback message="Memuat info sistem..." />;
   }
 
-  if (storageError && !storageData && !systemData) {
+  if (storageError && !storageData) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3">
         <AlertTriangle className="w-8 h-8 text-amber-500" />
@@ -615,23 +559,13 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="w-4 h-4 text-emerald-500" />
                 Monitor Server STB
-                {wsConnected ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-emerald-600 dark:text-emerald-400">LIVE</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
-                    <WifiOff className="w-3 h-3" />
-                    <span className="text-red-600 dark:text-red-400">OFFLINE</span>
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <RefreshCw className="w-3 h-3 text-amber-500" />
+                  <span className="text-amber-600 dark:text-amber-400">POLLING</span>
+                </span>
               </CardTitle>
-              <CardDescription>Monitoring CPU & RAM realtime via WebSocket</CardDescription>
+              <CardDescription>Monitoring CPU & RAM via HTTP polling (5s)</CardDescription>
             </div>
-            <Badge variant="outline" className={cn("shrink-0 text-[10px]", wsConnected ? "border-emerald-300 text-emerald-600" : "border-red-300 text-red-600")}>
-              <Wifi className="w-3 h-3 mr-1" /> WS {wsConnected ? '✓' : '✗'}
-            </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -861,23 +795,13 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
               <CardTitle className="text-base flex items-center gap-2">
                 <Cloud className="w-4 h-4 text-violet-500" />
                 Supabase Storage & AWS Server
-                {wsConnected ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-emerald-600 dark:text-emerald-400">LIVE</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
-                    <WifiOff className="w-3 h-3" />
-                    <span className="text-red-600 dark:text-red-400">OFFLINE</span>
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-emerald-600 dark:text-emerald-400">CONNECTED</span>
+                </span>
               </CardTitle>
-              <CardDescription>Monitoring Supabase Storage, AWS Server & Latensi Realtime</CardDescription>
+              <CardDescription>Monitoring Supabase Storage & AWS Server via HTTP</CardDescription>
             </div>
-            <Badge variant="outline" className={cn("shrink-0 text-[10px]", wsConnected ? "border-emerald-300 text-emerald-600" : "border-red-300 text-red-600")}>
-              <Wifi className="w-3 h-3 mr-1" /> WS {wsConnected ? '✓' : '✗'}
-            </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -929,17 +853,15 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-sky-500" />
               <p className="text-sm font-medium">Latensi Realtime</p>
-              {wsConnected && (
-                <span className="text-[10px] text-muted-foreground ml-auto">
-                  Update setiap 3 detik
-                </span>
-              )}
+              <span className="text-[10px] text-muted-foreground ml-auto">
+                Polling setiap 5 detik
+              </span>
             </div>
             <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
               <CircularGauge
                 value={Math.min((dbLatency?.dbLatencyMs || 0) / 5, 100)}
                 label="DB Latency"
-                detail={`${dbLatency?.dbLatencyMs ?? '...'} ms`}
+                detail={`${dbLatency?.dbLatencyMs ?? '—'} ms`}
                 size={100}
                 strokeWidth={7}
                 thresholds={[20, 60]}
@@ -947,9 +869,9 @@ export default function StorageTab({ queryClient }: { queryClient: QueryClient }
                 icon={<Database className="w-3.5 h-3.5 text-violet-500" />}
               />
               <CircularGauge
-                value={Math.min((supabaseLatency || 0) / 5, 100)}
+                value={0}
                 label="API Latency"
-                detail={`${supabaseLatency ?? '...'} ms`}
+                detail="— ms"
                 size={100}
                 strokeWidth={7}
                 thresholds={[20, 60]}

@@ -164,6 +164,10 @@ export async function PATCH(
       `)
       .single();
 
+    if (!product) {
+      return NextResponse.json({ error: 'Produk tidak ditemukan' }, { status: 404 });
+    }
+
     const productName = data.name || (existing as any).name || 'Unknown';
     createEvent(db, 'product_updated', { productId: id, productName });
     createLog(db, { type: 'activity', userId: authUserId, action: 'product_updated', entity: 'product', entityId: id });
@@ -171,8 +175,7 @@ export async function PATCH(
     // Invalidate all product caches on update
     try { await invalidateAllProductCaches(); } catch { /* non-fatal */ }
 
-    // Use updated product if available, otherwise use existing
-    const responseData = product ? toCamelCase(product) : toCamelCase(existing);
+    const responseData = toCamelCase(product);
     return NextResponse.json({ product: responseData });
   } catch (error: any) {
     console.error('Update product error:', error);
