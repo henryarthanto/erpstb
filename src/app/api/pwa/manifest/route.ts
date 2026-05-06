@@ -3,10 +3,18 @@ import { db } from '@/lib/supabase';
 
 const isSTB = process.env.STB_MODE === 'true' || process.env.STB_MODE === '1';
 
+// Detect mobile vs STB from User-Agent
+function isMobileDevice(ua: string | null): boolean {
+  if (!ua) return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) && !/STB|Android TV|FireTV|Chromecast/i.test(ua);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const customerCode = searchParams.get('code');
+    const ua = request.headers.get('user-agent');
+    const mobile = isMobileDevice(ua);
 
     const { data: settings, error } = await db.from('settings').select('*');
     if (error) throw error;
@@ -86,7 +94,12 @@ export async function GET(request: NextRequest) {
         : ['window-controls-overlay', 'standalone', 'minimal-ui'],
       background_color: isCustomer ? '#f9fafb' : '#0f172a',
       theme_color: isCustomer ? '#0d9488' : '#0f172a',
-      orientation: isSTB ? ('landscape' as const) : ('any' as const),
+      // Portrait for mobile phones, landscape for STB/TV, any for desktop
+      orientation: (isSTB && !mobile)
+        ? ('landscape' as const)
+        : mobile
+          ? ('portrait' as const)
+          : ('any' as const),
       scope: '/',
       icons,
       categories: isCustomer ? ['business', 'shopping'] : ['business', 'productivity', 'utilities'],
@@ -94,7 +107,7 @@ export async function GET(request: NextRequest) {
       dir: 'ltr' as const,
       prefer_related_applications: false,
       // STB: prevent navigation away from the app
-      ...(isSTB ? { navigation_type: 'in-app' as const } : {}),
+      ...(isSTB && !mobile ? { navigation_type: 'in-app' as const } : {}),
     };
 
     return new NextResponse(JSON.stringify(manifest), {
@@ -118,7 +131,8 @@ export async function GET(request: NextRequest) {
         : ['window-controls-overlay', 'standalone', 'minimal-ui'],
       background_color: '#0f172a',
       theme_color: '#0f172a',
-      orientation: isSTB ? 'landscape' : 'any',
+      // Portrait for mobile phones, landscape for STB/TV, any for desktop
+      orientation: 'portrait',
       scope: '/',
       icons: [
         {
