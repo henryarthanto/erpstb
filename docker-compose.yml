@@ -23,8 +23,8 @@ services:
     #   dockerfile: Dockerfile
     #
     # ── MODE 2: Pull dari GHCR ──
-    image: ghcr.io/henryarthanto/razkindo-erp:latest
-    container_name: razkindo-erp
+    image: ghcr.io/henryarthanto/erpstb:latest
+    container_name: erpstb
     restart: unless-stopped
     ports:
       - "3000:3000"
