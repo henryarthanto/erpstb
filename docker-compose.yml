@@ -1,0 +1,56 @@
+# ============================================================
+# Razkindo ERP STB - Docker Compose
+#
+# MODE 1 - Build lokal di STB:
+#   comment image:, uncomment build:
+#   docker compose up -d
+#
+# MODE 2 - Pull dari GHCR (kalau CI/CD sudah berhasil):
+#   comment build:, uncomment image:
+#   docker compose pull && docker compose up -d
+#
+# MODE 3 - Direct (tanpa Docker, paling ringan):
+#   ./deploy/deploy.sh --local      # git pull + build
+#   ./deploy/deploy.sh --artifact  # download dari CI ( tercepat)
+#   ./deploy/deploy.sh --docker    # pull image + restart
+# ============================================================
+
+services:
+  erp:
+    # ── MODE 1: Build Lokal di STB ──
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    #
+    # ── MODE 2: Pull dari GHCR ──
+    image: ghcr.io/henryarthanto/razkindo-erp:latest
+    container_name: razkindo-erp
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+      - STB_MODE=true
+      - NODE_OPTIONS=--max-old-space-size=384
+    volumes:
+      - upload-data:/app/public/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+volumes:
+  upload-data:
+    driver: local

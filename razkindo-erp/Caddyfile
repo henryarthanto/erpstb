@@ -1,0 +1,72 @@
+:81 {
+	@transform_port_query {
+		query XTransformPort=*
+	}
+
+	handle @transform_port_query {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+				dial_timeout 10s
+			}
+		}
+	}
+
+	# Handle SSE / realtime endpoints — flush immediately (no buffering)
+	@sse_endpoints {
+		path /api/events* /api/ai/broadcast* /api/health/ready*
+	}
+	handle @sse_endpoints {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+				dial_timeout 10s
+			}
+		}
+	}
+
+	# Handle WebSocket upgrade for Socket.IO
+	@websocket_upgrade {
+		path /socket.io/*
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @websocket_upgrade {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+				dial_timeout 10s
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+				dial_timeout 10s
+			}
+		}
+	}
+}

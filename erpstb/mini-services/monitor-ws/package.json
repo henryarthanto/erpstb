@@ -1,0 +1,13 @@
+{
+  "name": "monitor-ws",
+  "version": "1.0.0",
+  "description": "WebSocket service for realtime system & MariaDB monitoring",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1",
+    "mysql2": "^3.12.0"
+  }
+}

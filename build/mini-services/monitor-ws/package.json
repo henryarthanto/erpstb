@@ -1,0 +1,13 @@
+{
+  "name": "monitor-ws",
+  "version": "2.0.0",
+  "description": "WebSocket service for realtime system & PostgreSQL monitoring + change relay",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  },
+  "dependencies": {
+    "pg": "^8.20.0",
+    "socket.io": "^4.8.1"
+  }
+}

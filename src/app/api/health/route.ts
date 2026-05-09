@@ -1,0 +1,107 @@
+// =====================================================================
+// HEALTH CHECK ENDPOINT
+// GET /api/health
+//
+// Returns comprehensive system health report: database connectivity,
+// memory, cache, uptime, and process info.
+// PostgreSQL/Prisma mode (Supabase).
+// =====================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/supabase';
+import { verifyAuthToken } from '@/lib/token';
+import { getCacheStatus } from '@/lib/redis-cache';
+
+type CheckStatus = 'ok' | 'warning' | 'error';
+type OverallStatus = 'healthy' | 'degraded' | 'unhealthy';
+
+export async function GET(request: NextRequest) {
+  const authUserId = verifyAuthToken(request.headers.get('authorization'));
+  if (!authUserId) {
+    // Tanpa auth — cek koneksi database dasar saja
+    let dbOk = false;
+    let dbError = '';
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      dbOk = true;
+    } catch (err: any) {
+      dbError = err?.message || 'Connection failed';
+    }
+    return NextResponse.json({
+      status: dbOk ? 'ok' : 'error',
+      database: dbOk ? 'connected' : dbError,
+      env_has_db_url: !!process.env.DATABASE_URL,
+    }, { status: dbOk ? 200 : 503 });
+  }
+
+  const timestamp = new Date().toISOString();
+  const uptime = Math.floor(process.uptime());
+
+  // Database check — comprehensive
+  const dbStart = performance.now();
+  let dbStatus: CheckStatus = 'ok';
+  let dbLatency = 0;
+  let dbError: string | undefined;
+  let dbPoolSize = 0;
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbLatency = Math.round(performance.now() - dbStart);
+    // Try to get pool info (Prisma internal)
+    try {
+      const pool = (prisma as any)._engine?.dbClient?._pool;
+      if (pool) {
+        dbPoolSize = pool.numUsed?.() + pool.numFree?.() || pool.totalCount || 0;
+      }
+    } catch {}
+  } catch (err: any) {
+    dbStatus = 'error';
+    dbLatency = Math.round(performance.now() - dbStart);
+    dbError = err?.message || 'Connection failed';
+  }
+
+  // Memory check
+  const mem = process.memoryUsage();
+  const totalMB = Math.round(mem.rss / 1024 / 1024);
+  const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+  const memPercent = Math.round((mem.heapUsed / mem.heapTotal) * 100);
+
+  // Cache status
+  const cache = getCacheStatus();
+
+  // Process info
+  const processInfo = {
+    node_version: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    pid: process.pid,
+  };
+
+  // Determine overall status
+  let status: OverallStatus = 'healthy';
+  if (dbStatus === 'error') status = 'unhealthy';
+  else if (memPercent > 90) status = 'degraded';
+  else if (dbLatency > 5000) status = 'degraded';
+
+  return NextResponse.json({
+    status,
+    mode: 'postgresql',
+    timestamp,
+    uptime,
+    database: {
+      status: dbStatus,
+      latency_ms: dbLatency,
+      pool_size: dbPoolSize || undefined,
+      error: dbError,
+      url: process.env.DATABASE_URL?.replace(/:([^@]+)@/, ':****@') || 'not configured',
+    },
+    memory: {
+      rss_mb: totalMB,
+      heap_used_mb: heapUsedMB,
+      heap_total_mb: heapTotalMB,
+      heap_percent: memPercent,
+    },
+    cache,
+    process: processInfo,
+  }, { status: status === 'unhealthy' ? 503 : 200 });
+}
